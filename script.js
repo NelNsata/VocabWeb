@@ -1,7 +1,7 @@
 let db = JSON.parse(localStorage.getItem('vocab_db')) || [];
 let stats = JSON.parse(localStorage.getItem('vocab_stats')) || { forgotten: 0 };
 
-// --- กราฟวงกลม ---
+// --- 📊 กราฟสถิติ ---
 const ctx = document.getElementById('statChart').getContext('2d');
 let myChart = new Chart(ctx, {
     type: 'doughnut',
@@ -26,7 +26,49 @@ function updateUI() {
     localStorage.setItem('vocab_stats', JSON.stringify(stats));
 }
 
-// --- ระบบแปลภาษาจริง ---
+// --- 🔍 ระบบตรวจจับคำสะกดผิดและ Wh-Questions ---
+function checkGrammar(text) {
+    const alertBox = document.getElementById('grammarAlert');
+    const whWords = ['who', 'what', 'where', 'when', 'why', 'how'];
+    const words = text.toLowerCase().replace(/[?.,!]/g, '').split(' ');
+    let suggestions = [];
+
+    // 1. ตรวจสอบ Wh-Words สะกดผิดเบื้องต้น
+    words.forEach(w => {
+        if (w.length > 2) {
+            whWords.forEach(correct => {
+                if (w !== correct && isSimilar(w, correct)) {
+                    suggestions.push(`⚠️ คุณสะกด <b>"${correct}"</b> ผิดหรือเปล่า? (พบคำว่า "${w}")`);
+                }
+            });
+        }
+    });
+
+    // 2. ตรวจสอบประโยคคำถาม (ถ้ามี Wh-word แต่ไม่มี ?)
+    const hasWh = words.some(w => whWords.includes(w));
+    if (hasWh && !text.includes('?')) {
+        suggestions.push(`💡 ประโยค <b>Wh-Question</b> ควรลงท้ายด้วยเครื่องหมาย <b>"?"</b>`);
+    }
+
+    if (suggestions.length > 0) {
+        alertBox.innerHTML = suggestions.join('<br>');
+        alertBox.classList.remove('hidden');
+    } else {
+        alertBox.classList.add('hidden');
+    }
+}
+
+// ฟังก์ชันช่วยเช็คความคล้ายของคำ (Levenshtein Distance แบบง่าย)
+function isSimilar(s1, s2) {
+    let mistakes = 0;
+    if (Math.abs(s1.length - s2.length) > 1) return false;
+    for (let i = 0; i < Math.min(s1.length, s2.length); i++) {
+        if (s1[i] !== s2[i]) mistakes++;
+    }
+    return mistakes === 1; // ผิดได้แค่ 1 ตัวอักษร
+}
+
+// --- 🌐 ระบบแปลภาษาจริง ---
 async function fetchTranslation(word) {
     try {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&q=${encodeURIComponent(word)}`;
@@ -35,29 +77,33 @@ async function fetchTranslation(word) {
         return {
             translation: data[0][0][0],
             past: generatePastTense(word),
-            future: "will " + word
+            future: word.toLowerCase().includes(' ') ? "will " + word : "will " + word
         };
-    } catch (error) {
-        return { translation: "Error เชื่อมต่อไม่ได้", past: "-", future: "-" };
+    } catch (e) {
+        return { translation: "Error: ต่อเน็ตอยู่หรือเปล่า?", past: "-", future: "-" };
     }
 }
 
 function generatePastTense(word) {
-    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'take': 'took' };
+    if (word.includes(' ')) return "n/a (phrase)";
+    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought' };
     const low = word.toLowerCase();
     if (irregulars[low]) return irregulars[low];
     if (low.endsWith('e')) return word + 'd';
     return word + 'ed';
 }
 
-// --- ฟังก์ชันหลักเมื่อกดปุ่ม ---
+// --- 🚀 ฟังก์ชันหลัก ---
 async function processVocab() {
     const input = document.getElementById('vocabInput');
     const word = input.value.trim();
     if (!word) return;
 
+    checkGrammar(word);
+
     const resultCard = document.getElementById('resultCard');
     const displayWord = document.getElementById('displayWord');
+    const displayTrans = document.getElementById('displayTrans');
     const loadingOverlay = document.getElementById('loadingOverlay');
 
     document.getElementById('welcomeMessage')?.classList.add('hidden');
@@ -67,16 +113,15 @@ async function processVocab() {
     const existingIndex = db.findIndex(item => item.word.toLowerCase() === lowerWord);
 
     if (existingIndex !== -1) {
-        // กรณีลืมคำเดิม
         displayWord.innerHTML = `<span class="forgotten-word">${word}</span>`;
         stats.forgotten += 1;
         db[existingIndex].forgotCount = (db[existingIndex].forgotCount || 0) + 1;
         showData(db[existingIndex]);
     } else {
-        // กรณีคำใหม่
         loadingOverlay?.classList.remove('hidden');
         displayWord.innerText = word;
-        
+        displayTrans.innerText = "กำลังค้นหา...";
+
         const apiResult = await fetchTranslation(word);
         const newEntry = {
             word: word,
@@ -101,7 +146,7 @@ function showData(data) {
     document.getElementById('futureTense').innerText = data.future;
 }
 
-// --- ระบบจัดการคลังและปุ่มลบ ---
+// --- 📋 คลังคำศัพท์และระบบลบ ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
@@ -109,17 +154,15 @@ function openVocabList() {
         const row = document.createElement('tr');
         row.className = "hover:bg-slate-50 transition";
         row.innerHTML = `
-            <td class="p-4 font-bold text-blue-600 uppercase text-sm">${item.word}</td>
+            <td class="p-4 font-bold text-blue-600 uppercase text-xs">${item.word}</td>
             <td class="p-4 text-slate-600 text-sm">${item.translation}</td>
             <td class="p-4 text-center">
-                <span class="px-2 py-1 rounded-full text-xs font-bold ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">
+                <span class="px-2 py-1 rounded-full text-[10px] font-black ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">
                     ${item.forgotCount || 0}
                 </span>
             </td>
             <td class="p-4 text-center">
-                <button onclick="deleteWord(${index})" class="text-red-400 hover:text-red-600 p-2">
-                    🗑️
-                </button>
+                <button onclick="deleteWord(${index})" class="hover:scale-125 transition-transform">🗑️</button>
             </td>`;
         tableBody.appendChild(row);
     });
