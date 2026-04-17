@@ -16,8 +16,8 @@
         </h1>
 
         <div class="bg-white p-6 rounded-3xl shadow-sm mb-4 border border-slate-100">
-            <div class="flex gap-2">
-                <input type="text" id="vocabInput" placeholder="กรอกคำศัพท์ เช่น wherr, waht..." 
+            <div class="flex gap-2 relative">
+                <input type="text" id="vocabInput" placeholder="กรอกคำศัพท์ที่นี่..." 
                     class="flex-1 p-4 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none text-lg transition-all"
                     autocomplete="off">
                 <button onclick="processVocab()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-2xl font-bold transition shadow-lg shadow-blue-200">
@@ -27,10 +27,11 @@
             
             <div id="grammarAlert" class="hidden mt-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-sm animate-fade-in shadow-sm"></div>
 
-            <div class="mt-4 flex justify-center">
+            <div class="mt-4 flex justify-center gap-4">
                 <button onclick="openVocabList()" class="text-blue-600 hover:text-blue-800 font-semibold text-sm flex items-center gap-1 transition">
-                    📖 ดูคลังคำศัพท์ที่บันทึกไว้ทั้งหมด
+                    📖 ดูคลังคำศัพท์
                 </button>
+                <span id="dictStatus" class="text-[10px] text-slate-400 self-center uppercase tracking-widest font-bold italic">Loading 10K Words...</span>
             </div>
         </div>
 
@@ -38,37 +39,36 @@
             <div class="md:col-span-2 space-y-4">
                 <div id="resultCard" class="hidden bg-white p-8 rounded-3xl shadow-md border-l-[12px] border-blue-500 animate-fade-in relative overflow-hidden">
                     <div id="loadingOverlay" class="hidden absolute inset-0 bg-white/90 flex items-center justify-center z-10 backdrop-blur-sm">
-                        <span class="text-blue-600 font-bold italic animate-pulse">กำลังวิเคราะห์และแปลผล...</span>
+                        <span class="text-blue-600 font-bold italic animate-pulse">กำลังวิเคราะห์ข้อมูล...</span>
                     </div>
                     <h2 id="displayWord" class="text-5xl font-black mb-2 uppercase tracking-tighter"></h2>
                     <p id="displayTrans" class="text-2xl text-slate-600 mb-6 font-medium"></p>
                     <hr class="mb-6 border-slate-100">
                     <div class="grid grid-cols-2 gap-4">
                         <div class="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                            <span class="block text-blue-400 font-bold text-xs uppercase mb-1">Past Tense</span>
+                            <span class="block text-blue-400 font-bold text-[10px] uppercase mb-1 tracking-widest">Past Tense</span>
                             <span id="pastTense" class="text-blue-800 font-black italic text-xl"></span>
                         </div>
                         <div class="bg-green-50/50 p-4 rounded-2xl border border-green-100">
-                            <span class="block text-green-400 font-bold text-xs uppercase mb-1">Future Tense</span>
+                            <span class="block text-green-400 font-bold text-[10px] uppercase mb-1 tracking-widest">Future Tense</span>
                             <span id="futureTense" class="text-green-800 font-black italic text-xl"></span>
                         </div>
                     </div>
                 </div>
-                
                 <div id="welcomeMessage" class="text-center py-24 text-slate-400 bg-white shadow-inner rounded-3xl border-2 border-dashed border-slate-200">
-                    <p class="text-lg">พิมพ์คำศัพท์เพื่อเริ่มต้น <br><span class="text-sm">ระบบจะช่วยเดาคำที่คุณอาจสะกดผิดให้ด้วย!</span></p>
+                    <p class="text-lg font-medium italic">ป้อนคำศัพท์ที่ถูกต้องเพื่อสะสมคลังความจำ</p>
                 </div>
             </div>
 
             <div class="bg-white p-6 rounded-3xl shadow-md self-start border border-slate-100">
-                <h3 class="font-black text-slate-400 mb-6 text-xs uppercase tracking-[0.2em] text-center">Memory Stats</h3>
-                <div class="space-y-6">
-                    <div class="text-center">
-                        <span class="block text-slate-400 text-xs font-bold uppercase mb-1">Total Vocab</span>
+                <h3 class="font-black text-slate-400 mb-6 text-[10px] uppercase tracking-[0.2em] text-center italic">Memory Stats</h3>
+                <div class="space-y-6 text-center">
+                    <div>
+                        <span class="block text-slate-400 text-[10px] font-bold uppercase mb-1">Total Vocab</span>
                         <span id="totalCount" class="font-black text-4xl text-blue-600 tracking-tighter">0</span>
                     </div>
-                    <div class="text-center border-t border-slate-50 pt-4">
-                        <span class="block text-red-400 text-xs font-bold uppercase mb-1">Repeated (Forgot)</span>
+                    <div class="border-t border-slate-50 pt-4">
+                        <span class="block text-red-400 text-[10px] font-bold uppercase mb-1">Repeated (Forgot)</span>
                         <span id="forgetCount" class="font-black text-4xl text-red-500 tracking-tighter">0</span>
                     </div>
                     <div class="pt-4 h-44 relative">
@@ -86,7 +86,7 @@
                 <button onclick="closeVocabList()" class="text-slate-300 hover:text-slate-900 text-4xl font-light transition">&times;</button>
             </div>
             <div class="p-0 overflow-y-auto flex-1">
-                <table class="w-full text-left">
+                <table class="w-full text-left border-collapse">
                     <thead class="sticky top-0 bg-white/95 backdrop-blur shadow-sm z-10">
                         <tr class="text-slate-400 text-[10px] uppercase font-black tracking-widest">
                             <th class="p-6">Word</th>
