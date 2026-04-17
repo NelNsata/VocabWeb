@@ -1,18 +1,34 @@
 .forgotten-word {
-    text-decoration: underline wavy #ef4444 3px;
+    text-decoration: underline wavy #ef4444 4px;
     color: #ef4444;
 }
 
 .animate-fade-in {
-    animation: fadeIn 0.4s cubic-bezier(0, 0, 0.2, 1);
+    animation: fadeIn 0.5s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
+    from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
 
-#grammarAlert b { color: #b45309; text-decoration: underline; }
+/* ปรับแต่งปุ่ม Suggestion ใน Alert */
+.suggestion-btn {
+    background: #ffffff;
+    padding: 2px 8px;
+    border-radius: 8px;
+    border: 1px solid #fde68a;
+    font-weight: 800;
+    color: #b45309;
+    transition: all 0.2s;
+    margin: 0 4px;
+}
+
+.suggestion-btn:hover {
+    background: #b45309;
+    color: #ffffff;
+    transform: scale(1.05);
+}

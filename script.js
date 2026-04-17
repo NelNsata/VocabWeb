@@ -11,7 +11,7 @@ let myChart = new Chart(ctx, {
             data: [db.length, stats.forgotten],
             backgroundColor: ['#3b82f6', '#ef4444'],
             borderWidth: 0,
-            cutout: '75%'
+            cutout: '80%'
         }]
     },
     options: { plugins: { legend: { display: false } }, maintainAspectRatio: false }
@@ -26,47 +26,79 @@ function updateUI() {
     localStorage.setItem('vocab_stats', JSON.stringify(stats));
 }
 
-// --- 🔍 ระบบตรวจสอบความถูกต้องแบบเข้มงวด ---
-function validateInput(text) {
-    const alertBox = document.getElementById('grammarAlert');
-    const whWords = ['who', 'what', 'where', 'when', 'why', 'how'];
-    const words = text.toLowerCase().replace(/[?.,!]/g, '').split(' ');
-    let suggestions = [];
+// --- 🧠 ระบบหาความน่าจะเป็น (Did you mean...?) ---
 
-    // 1. ตรวจสอบ Wh-Words (Strict Check)
-    words.forEach(w => {
-        if (w.startsWith('wh') || w === 'how' || (w.includes('wh') && w.length > 2)) {
-            if (!whWords.includes(w)) {
-                suggestions.push(`❌ คำว่า <b>"${w}"</b> สะกดผิด! โปรดตรวจสอบตัวสะกด (เช่น where, what, who)`);
-            }
+// อัลกอริทึมคำนวณความต่างของตัวอักษร
+function getLevenshteinDistance(s1, s2) {
+    const track = Array(s2.length + 1).fill(null).map(() => Array(s1.length + 1).fill(null));
+    for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
+    for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
+    for (let j = 1; j <= s2.length; j += 1) {
+        for (let i = 1; i <= s1.length; i += 1) {
+            const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
+        }
+    }
+    return track[s2.length][s1.length];
+}
+
+function getDidYouMean(wrongWord) {
+    // ฐานข้อมูลคำศัพท์พื้นฐาน (เพิ่มได้ตามใจชอบเพื่อน)
+    const dictionary = ['who', 'what', 'where', 'when', 'why', 'how', 'which', 'whom', 'whose', 'whether', 'because', 'developer', 'computer', 'language', 'understand'];
+    let bestMatch = null;
+    let minDistance = 3; // ผิดได้ไม่เกิน 2 ตัวอักษร
+
+    dictionary.forEach(correctWord => {
+        const distance = getLevenshteinDistance(wrongWord.toLowerCase(), correctWord);
+        if (distance > 0 && distance < minDistance) {
+            minDistance = distance;
+            bestMatch = correctWord;
         }
     });
+    return bestMatch;
+}
 
-    // 2. ตรวจสอบการเบิ้ลตัวอักษรผิดปกติ (เช่น Wherrr, Cattt)
-    const hasRepeated = /(.)\1\1/.test(text.toLowerCase());
-    if (hasRepeated) {
-        suggestions.push(`⚠️ พบตัวอักษรซ้ำซ้อนผิดปกติใน <b>"${text}"</b> กรุณาพิมพ์ใหม่ให้ถูกต้อง`);
-    }
+// ฟังก์ชันกดปุ่มแก้ไขคำอัตโนมัติ
+function autoFix(correctWord) {
+    const input = document.getElementById('vocabInput');
+    input.value = correctWord;
+    document.getElementById('grammarAlert').classList.add('hidden');
+    processVocab(); // ทำงานต่อทันทีหลังจากแก้คำให้แล้ว
+}
 
-    // 3. ตรวจสอบประโยคคำถาม
-    const hasWh = words.some(w => whWords.includes(w));
-    if (hasWh && !text.includes('?')) {
-        suggestions.push(`💡 อย่าลืมใส่เครื่องหมาย <b>"?"</b> ท้ายประโยค Wh-Question นะครับ`);
-    }
+// --- 🔍 ระบบตรวจสอบความถูกต้อง (Validation) ---
+function validateInput(text) {
+    const alertBox = document.getElementById('grammarAlert');
+    const words = text.toLowerCase().replace(/[?.,!]/g, '').split(' ');
+    let suggestions = [];
+    let isBlocker = false;
+
+    words.forEach(w => {
+        // เช็คความน่าจะเป็น
+        const suggestion = getDidYouMean(w);
+        if (suggestion) {
+            suggestions.push(`🤔 คุณหมายถึงคำว่า <button onclick="autoFix('${suggestion}')" class="suggestion-btn">"${suggestion}"</button> หรือเปล่า?`);
+            isBlocker = true; // บล็อกไว้เพื่อให้ user กดเลือกคำที่ถูก
+        }
+
+        // เช็คตัวอักษรซ้ำ
+        if (/(.)\1\1/.test(w)) {
+            suggestions.push(`⚠️ คำว่า <b>"${w}"</b> ดูเหมือนจะมีตัวอักษรซ้ำซ้อนผิดปกติ`);
+            isBlocker = true;
+        }
+    });
 
     if (suggestions.length > 0) {
         alertBox.innerHTML = suggestions.join('<br>');
         alertBox.classList.remove('hidden');
-        
-        // ถ้าสะกดผิด หรือมีเครื่องหมายกากบาท จะไม่ยอมให้เซฟลงสถิติ
-        return !suggestions.some(s => s.includes('❌') || s.includes('⚠️'));
+        return !isBlocker;
     }
     
     alertBox.classList.add('hidden');
     return true;
 }
 
-// --- 🌐 ระบบแปลภาษาจริงจาก Google ---
+// --- 🌐 ระบบแปลภาษาจริง ---
 async function fetchTranslation(word) {
     try {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&q=${encodeURIComponent(word)}`;
@@ -78,12 +110,12 @@ async function fetchTranslation(word) {
             future: "will " + word
         };
     } catch (e) {
-        return { translation: "ไม่พบคำแปล", past: "-", future: "-" };
+        return { translation: "เกิดข้อผิดพลาดในการเชื่อมต่อ", past: "-", future: "-" };
     }
 }
 
 function generatePastTense(word) {
-    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought' };
+    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought', 'take': 'took' };
     const low = word.toLowerCase();
     if (word.includes(' ')) return "Phrase";
     if (irregulars[low]) return irregulars[low];
@@ -97,7 +129,7 @@ async function processVocab() {
     const word = input.value.trim();
     if (!word) return;
 
-    // ตรวจสอบความถูกต้องก่อน (ถ้าไม่ผ่านให้หยุดเลย)
+    // ตรวจสอบความถูกต้อง (Did you mean?)
     if (!validateInput(word)) return;
 
     const resultCard = document.getElementById('resultCard');
@@ -112,16 +144,14 @@ async function processVocab() {
     const existingIndex = db.findIndex(item => item.word.toLowerCase() === lowerWord);
 
     if (existingIndex !== -1) {
-        // [CASE: พิมพ์ซ้ำ]
         displayWord.innerHTML = `<span class="forgotten-word">${word}</span>`;
         stats.forgotten += 1;
         db[existingIndex].forgotCount = (db[existingIndex].forgotCount || 0) + 1;
         showData(db[existingIndex]);
     } else {
-        // [CASE: คำใหม่]
         loadingOverlay?.classList.remove('hidden');
         displayWord.innerText = word;
-        displayTrans.innerText = "กำลังค้นหา...";
+        displayTrans.innerText = "กำลังค้นหาคำแปล...";
         
         const apiResult = await fetchTranslation(word);
         const newEntry = {
@@ -147,23 +177,23 @@ function showData(data) {
     document.getElementById('futureTense').innerText = data.future;
 }
 
-// --- 📋 จัดการคลังและสถิติ ---
+// --- 📋 ระบบคลังคำศัพท์ ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
     db.forEach((item, index) => {
         const row = document.createElement('tr');
-        row.className = "hover:bg-slate-50 transition";
+        row.className = "hover:bg-blue-50/30 transition duration-200";
         row.innerHTML = `
-            <td class="p-4 font-bold text-blue-600 uppercase text-xs">${item.word}</td>
-            <td class="p-4 text-slate-600 text-sm">${item.translation}</td>
-            <td class="p-4 text-center">
-                <span class="px-2 py-1 rounded-full text-[10px] font-black ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">
+            <td class="p-6 font-black text-blue-600 uppercase text-sm tracking-tight">${item.word}</td>
+            <td class="p-6 text-slate-600 text-sm font-medium">${item.translation}</td>
+            <td class="p-6 text-center">
+                <span class="px-3 py-1 rounded-full text-[10px] font-black ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">
                     ${item.forgotCount || 0}
                 </span>
             </td>
-            <td class="p-4 text-center">
-                <button onclick="deleteWord(${index})" class="text-slate-300 hover:text-red-500 transition-transform hover:scale-125">🗑️</button>
+            <td class="p-6 text-center">
+                <button onclick="deleteWord(${index})" class="text-slate-300 hover:text-red-500 transition-all transform hover:scale-125">🗑️</button>
             </td>`;
         tableBody.appendChild(row);
     });
@@ -171,7 +201,7 @@ function openVocabList() {
 }
 
 function deleteWord(index) {
-    if (confirm(`คุณต้องการลบคำว่า "${db[index].word}" ใช่หรือไม่?`)) {
+    if (confirm(`ลบคำว่า "${db[index].word}" ออกจากความทรงจำ?`)) {
         stats.forgotten = Math.max(0, stats.forgotten - (db[index].forgotCount || 0));
         db.splice(index, 1);
         updateUI();
