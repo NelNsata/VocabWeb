@@ -2,15 +2,12 @@ let db = JSON.parse(localStorage.getItem('vocab_db')) || [];
 let stats = JSON.parse(localStorage.getItem('vocab_stats')) || { forgotten: 0 };
 let commonWords = []; 
 
-// --- 🌐 ระบบดึง Dictionary แบบ Full Load (10,000 คำ) ---
+// --- 🌐 โหลดดิกชันนารีอังกฤษ 10K คำ ---
 async function initDictionary() {
     try {
         const response = await fetch('https://raw.githubusercontent.com/first20hours/google-10000-english/master/google-10000-english-no-swears.txt');
         const text = await response.text();
-        
-        // กวาดเอา 10,000 คำเข้าคลังสมองเลย!
         commonWords = text.split('\n').map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
-        
         const statusEl = document.getElementById('dictStatus');
         statusEl.innerHTML = "✅ <span class='font-black'>10K DICT READY</span>";
         statusEl.classList.replace('text-slate-400', 'text-green-500');
@@ -44,7 +41,12 @@ function updateUI() {
     localStorage.setItem('vocab_stats', JSON.stringify(stats));
 }
 
-// --- 🧠 อัลกอริทึมหาคำศัพท์ผิดเพี้ยน ---
+// --- 🧠 ระบบเช็คภาษาและคำผิด ---
+function isChineseChar(text) {
+    // เช็คว่ามีตัวอักษรจีนอยู่ในคำหรือไม่
+    return /[\u4e00-\u9fa5]/.test(text);
+}
+
 function getLevenshteinDistance(s1, s2) {
     const track = Array(s2.length + 1).fill(null).map(() => Array(s1.length + 1).fill(null));
     for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
@@ -60,11 +62,9 @@ function getLevenshteinDistance(s1, s2) {
 
 function getDidYouMean(wrongWord) {
     if (wrongWord.length < 3) return null;
-    
-    // ถ้าคำที่พิมพ์มา อยู่ใน 10,000 คำอยู่แล้ว แปลว่าถูกชัวร์ ปล่อยผ่านได้เลย
     if (commonWords.includes(wrongWord)) return null;
 
-    let threshold = wrongWord.length >= 5 ? 2 : 1; // คำยาวยอมให้ผิดได้ 2 ตัว
+    let threshold = wrongWord.length >= 5 ? 2 : 1;
     let bestMatch = null;
     let minDistance = threshold + 1;
 
@@ -74,7 +74,6 @@ function getDidYouMean(wrongWord) {
             if (distance > 0 && distance < minDistance) {
                 minDistance = distance;
                 bestMatch = correctWord;
-                // ถ้าผิดแค่ 1 ตัวอักษร และเป็นคำฮิตๆ (เจอแรกๆ) ให้เบรกทันที
                 if (distance === 1) break; 
             }
         }
@@ -83,28 +82,31 @@ function getDidYouMean(wrongWord) {
 }
 
 function autoFix(correctWord) {
-    const input = document.getElementById('vocabInput');
-    input.value = correctWord;
+    document.getElementById('vocabInput').value = correctWord;
     document.getElementById('grammarAlert').classList.add('hidden');
     processVocab();
 }
 
-// --- 🔍 ระบบตรวจสอบการสะกดคำ (เข้มงวด) ---
 function validateInput(text) {
     const alertBox = document.getElementById('grammarAlert');
     const word = text.toLowerCase().replace(/[?.,!]/g, '');
     
+    // ถ้าเป็นภาษาจีน ข้ามการเช็คตัวสะกดไปเลย (เพราะพิมพ์เป็นตัวๆ อยู่แล้ว)
+    if (isChineseChar(word)) {
+        alertBox.classList.add('hidden');
+        return true; 
+    }
+
+    // ถ้าเป็นภาษาอังกฤษ ทำการเช็คปกติ
     const suggestion = getDidYouMean(word);
-    
     if (suggestion) {
-        alertBox.innerHTML = `🤔 เพื่อน R พิมพ์ผิดหรือเปล่า? หมายถึงคำว่า <button onclick="autoFix('${suggestion}')" class="suggestion-btn">"${suggestion}"</button> ใช่ไหม?`;
+        alertBox.innerHTML = `🤔 หมายถึงคำว่า <button onclick="autoFix('${suggestion}')" class="suggestion-btn">"${suggestion}"</button> ใช่ไหม?`;
         alertBox.classList.remove('hidden');
-        return false; // ไม่ยอมให้ผ่านจนกว่าจะคลิกแก้คำผิด
+        return false;
     }
     
-    // ดักตัวอักษรซ้ำรัวๆ เช่น remooov
     if (/(.)\1\1/.test(word)) {
-        alertBox.innerHTML = `⚠️ คำว่า <b>"${word}"</b> สะกดแปลกๆ นะเพื่อน ลองเช็คอีกที`;
+        alertBox.innerHTML = `⚠️ คำว่า <b>"${word}"</b> สะกดแปลกๆ นะเพื่อน`;
         alertBox.classList.remove('hidden');
         return false;
     }
@@ -113,22 +115,41 @@ function validateInput(text) {
     return true;
 }
 
-// --- 🌐 ระบบแปลภาษา Google ---
-async function fetchTranslation(word) {
+// --- 🌐 ระบบแปลภาษา Google (รองรับ พินอิน) ---
+async function fetchTranslation(word, isChinese) {
     try {
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&q=${encodeURIComponent(word)}`;
+        // ถ้าเป็นจีน แปล zh-CN -> th พร้อมขอข้อมูล dt=rm (Romanization/พินอิน)
+        // ถ้าเป็นอังกฤษ แปล en -> th
+        const langCode = isChinese ? 'zh-CN' : 'en';
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${langCode}&tl=th&dt=t&dt=rm&q=${encodeURIComponent(word)}`;
+        
         const response = await fetch(url);
         const data = await response.json();
+        
         let translatedText = data[0][0][0];
+        let pinyinText = "-";
 
-        if (translatedText.toLowerCase() === word.toLowerCase() && word.length > 2) {
+        // พยายามดึง พินอิน จาก Google API (ถ้ามี)
+        if (isChinese && data[0]) {
+            for (let i = 0; i < data[0].length; i++) {
+                // พินอินมักจะอยู่ในตำแหน่งที่มีข้อมูล 4 ตัว และตัวที่ 3/4 คือพินอิน
+                if (data[0][i][2] || data[0][i][3]) {
+                    pinyinText = data[0][i][3] || data[0][i][2];
+                }
+            }
+        }
+
+        // เช็คแปลไม่ได้
+        if (translatedText.toLowerCase() === word.toLowerCase() && word.length > 2 && !isChinese) {
             return { error: true };
         }
 
         return {
             translation: translatedText,
-            past: generatePastTense(word),
-            future: "will " + word,
+            lang: isChinese ? 'zh' : 'en',
+            pinyin: pinyinText,
+            past: isChinese ? "-" : generatePastTense(word),
+            future: isChinese ? "-" : "will " + word,
             error: false
         };
     } catch (e) {
@@ -137,7 +158,7 @@ async function fetchTranslation(word) {
 }
 
 function generatePastTense(word) {
-    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought', 'remove': 'removed' };
+    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought' };
     const low = word.toLowerCase();
     if (irregulars[low]) return irregulars[low];
     if (low.endsWith('e')) return word + 'd';
@@ -150,8 +171,11 @@ async function processVocab() {
     const word = input.value.trim();
     if (!word) return;
 
-    // เช็คความถูกต้อง ถ้าเด้งถาม "Did you mean?" จะหยุดการทำงานบรรทัดนี้
     if (!validateInput(word)) return;
+
+    const isChinese = isChineseChar(word);
+    const lowerWord = isChinese ? word : word.toLowerCase();
+    const existingIndex = db.findIndex(item => (isChinese ? item.word === lowerWord : item.word.toLowerCase() === lowerWord));
 
     const resultCard = document.getElementById('resultCard');
     const displayWord = document.getElementById('displayWord');
@@ -160,9 +184,6 @@ async function processVocab() {
 
     document.getElementById('welcomeMessage')?.classList.add('hidden');
     resultCard.classList.remove('hidden');
-
-    const lowerWord = word.toLowerCase();
-    const existingIndex = db.findIndex(item => item.word.toLowerCase() === lowerWord);
 
     if (existingIndex !== -1) {
         displayWord.innerHTML = `<span class="forgotten-word">${word}</span>`;
@@ -174,7 +195,7 @@ async function processVocab() {
         displayWord.innerText = word;
         displayTrans.innerText = "กำลังค้นหา...";
         
-        const apiResult = await fetchTranslation(word);
+        const apiResult = await fetchTranslation(word, isChinese);
         
         if (apiResult.error) {
             loadingOverlay?.classList.add('hidden');
@@ -184,8 +205,12 @@ async function processVocab() {
         }
 
         const newEntry = {
-            word: word, translation: apiResult.translation,
-            past: apiResult.past, future: apiResult.future, forgotCount: 0
+            word: word, 
+            translation: apiResult.translation,
+            lang: apiResult.lang,
+            data1: isChinese ? apiResult.pinyin : apiResult.past, // ใช้เก็บ Pinyin หรือ Past tense
+            data2: isChinese ? "คำศัพท์ภาษาจีน" : apiResult.future,
+            forgotCount: 0
         };
 
         db.push(newEntry);
@@ -197,10 +222,37 @@ async function processVocab() {
     updateUI();
 }
 
+// --- 🎨 ปรับการแสดงผลหน้าการ์ดให้รองรับ 2 ภาษา ---
 function showData(data) {
     document.getElementById('displayTrans').innerText = data.translation;
-    document.getElementById('pastTense').innerText = data.past;
-    document.getElementById('futureTense').innerText = data.future;
+    const badge = document.getElementById('langBadge');
+    
+    // ตั้งค่ากล่อง 1 (อดีต หรือ พินอิน)
+    const label1 = document.getElementById('infoLabel1');
+    const val1 = document.getElementById('infoValue1');
+    // ตั้งค่ากล่อง 2 (อนาคต หรือ ประเภท)
+    const label2 = document.getElementById('infoLabel2');
+    const val2 = document.getElementById('infoValue2');
+
+    if (data.lang === 'zh') {
+        badge.innerText = "🇨🇳 Chinese";
+        badge.className = "text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-600";
+        
+        label1.innerText = "Pinyin (พินอิน)";
+        val1.innerText = data.data1 || "-";
+        
+        label2.innerText = "Type (ประเภท)";
+        val2.innerText = data.data2 || "-";
+    } else {
+        badge.innerText = "🇬🇧 English";
+        badge.className = "text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-blue-600";
+        
+        label1.innerText = "Past Tense (อดีต)";
+        val1.innerText = data.data1 || "-";
+        
+        label2.innerText = "Future Tense (อนาคต)";
+        val2.innerText = data.data2 || "-";
+    }
 }
 
 // --- 📋 คลังคำศัพท์ ---
@@ -208,11 +260,12 @@ function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
     db.forEach((item, index) => {
+        const flag = item.lang === 'zh' ? '🇨🇳' : '🇬🇧';
         const row = document.createElement('tr');
         row.className = "hover:bg-blue-50/20 transition duration-200";
         row.innerHTML = `
-            <td class="p-6 font-black text-blue-600 uppercase text-xs">${item.word}</td>
-            <td class="p-6 text-slate-600 text-sm font-medium">${item.translation}</td>
+            <td class="p-6 font-black text-slate-700 ${item.lang === 'zh' ? 'text-lg' : 'uppercase text-xs'}">${flag} ${item.word}</td>
+            <td class="p-6 text-slate-600 text-sm font-medium">${item.translation} <br><span class="text-[10px] text-slate-400 font-normal italic">${item.data1}</span></td>
             <td class="p-6 text-center">
                 <span class="px-3 py-1 rounded-full text-[10px] font-black ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">
                     ${item.forgotCount || 0}
@@ -241,6 +294,5 @@ document.getElementById('vocabInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') processVocab();
 });
 
-// เริ่มโหลดพจนานุกรม 10K ตอนเปิดเว็บเลย!
 initDictionary();
 updateUI();
