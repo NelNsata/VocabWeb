@@ -26,49 +26,47 @@ function updateUI() {
     localStorage.setItem('vocab_stats', JSON.stringify(stats));
 }
 
-// --- 🔍 ระบบตรวจจับคำสะกดผิดและ Wh-Questions ---
-function checkGrammar(text) {
+// --- 🔍 ระบบตรวจสอบความถูกต้องแบบเข้มงวด ---
+function validateInput(text) {
     const alertBox = document.getElementById('grammarAlert');
     const whWords = ['who', 'what', 'where', 'when', 'why', 'how'];
     const words = text.toLowerCase().replace(/[?.,!]/g, '').split(' ');
     let suggestions = [];
 
-    // 1. ตรวจสอบ Wh-Words สะกดผิดเบื้องต้น
+    // 1. ตรวจสอบ Wh-Words (Strict Check)
     words.forEach(w => {
-        if (w.length > 2) {
-            whWords.forEach(correct => {
-                if (w !== correct && isSimilar(w, correct)) {
-                    suggestions.push(`⚠️ คุณสะกด <b>"${correct}"</b> ผิดหรือเปล่า? (พบคำว่า "${w}")`);
-                }
-            });
+        if (w.startsWith('wh') || w === 'how' || (w.includes('wh') && w.length > 2)) {
+            if (!whWords.includes(w)) {
+                suggestions.push(`❌ คำว่า <b>"${w}"</b> สะกดผิด! โปรดตรวจสอบตัวสะกด (เช่น where, what, who)`);
+            }
         }
     });
 
-    // 2. ตรวจสอบประโยคคำถาม (ถ้ามี Wh-word แต่ไม่มี ?)
+    // 2. ตรวจสอบการเบิ้ลตัวอักษรผิดปกติ (เช่น Wherrr, Cattt)
+    const hasRepeated = /(.)\1\1/.test(text.toLowerCase());
+    if (hasRepeated) {
+        suggestions.push(`⚠️ พบตัวอักษรซ้ำซ้อนผิดปกติใน <b>"${text}"</b> กรุณาพิมพ์ใหม่ให้ถูกต้อง`);
+    }
+
+    // 3. ตรวจสอบประโยคคำถาม
     const hasWh = words.some(w => whWords.includes(w));
     if (hasWh && !text.includes('?')) {
-        suggestions.push(`💡 ประโยค <b>Wh-Question</b> ควรลงท้ายด้วยเครื่องหมาย <b>"?"</b>`);
+        suggestions.push(`💡 อย่าลืมใส่เครื่องหมาย <b>"?"</b> ท้ายประโยค Wh-Question นะครับ`);
     }
 
     if (suggestions.length > 0) {
         alertBox.innerHTML = suggestions.join('<br>');
         alertBox.classList.remove('hidden');
-    } else {
-        alertBox.classList.add('hidden');
+        
+        // ถ้าสะกดผิด หรือมีเครื่องหมายกากบาท จะไม่ยอมให้เซฟลงสถิติ
+        return !suggestions.some(s => s.includes('❌') || s.includes('⚠️'));
     }
+    
+    alertBox.classList.add('hidden');
+    return true;
 }
 
-// ฟังก์ชันช่วยเช็คความคล้ายของคำ (Levenshtein Distance แบบง่าย)
-function isSimilar(s1, s2) {
-    let mistakes = 0;
-    if (Math.abs(s1.length - s2.length) > 1) return false;
-    for (let i = 0; i < Math.min(s1.length, s2.length); i++) {
-        if (s1[i] !== s2[i]) mistakes++;
-    }
-    return mistakes === 1; // ผิดได้แค่ 1 ตัวอักษร
-}
-
-// --- 🌐 ระบบแปลภาษาจริง ---
+// --- 🌐 ระบบแปลภาษาจริงจาก Google ---
 async function fetchTranslation(word) {
     try {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&q=${encodeURIComponent(word)}`;
@@ -77,29 +75,30 @@ async function fetchTranslation(word) {
         return {
             translation: data[0][0][0],
             past: generatePastTense(word),
-            future: word.toLowerCase().includes(' ') ? "will " + word : "will " + word
+            future: "will " + word
         };
     } catch (e) {
-        return { translation: "Error: ต่อเน็ตอยู่หรือเปล่า?", past: "-", future: "-" };
+        return { translation: "ไม่พบคำแปล", past: "-", future: "-" };
     }
 }
 
 function generatePastTense(word) {
-    if (word.includes(' ')) return "n/a (phrase)";
     const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought' };
     const low = word.toLowerCase();
+    if (word.includes(' ')) return "Phrase";
     if (irregulars[low]) return irregulars[low];
     if (low.endsWith('e')) return word + 'd';
     return word + 'ed';
 }
 
-// --- 🚀 ฟังก์ชันหลัก ---
+// --- 🚀 ฟังก์ชันประมวลผลหลัก ---
 async function processVocab() {
     const input = document.getElementById('vocabInput');
     const word = input.value.trim();
     if (!word) return;
 
-    checkGrammar(word);
+    // ตรวจสอบความถูกต้องก่อน (ถ้าไม่ผ่านให้หยุดเลย)
+    if (!validateInput(word)) return;
 
     const resultCard = document.getElementById('resultCard');
     const displayWord = document.getElementById('displayWord');
@@ -113,15 +112,17 @@ async function processVocab() {
     const existingIndex = db.findIndex(item => item.word.toLowerCase() === lowerWord);
 
     if (existingIndex !== -1) {
+        // [CASE: พิมพ์ซ้ำ]
         displayWord.innerHTML = `<span class="forgotten-word">${word}</span>`;
         stats.forgotten += 1;
         db[existingIndex].forgotCount = (db[existingIndex].forgotCount || 0) + 1;
         showData(db[existingIndex]);
     } else {
+        // [CASE: คำใหม่]
         loadingOverlay?.classList.remove('hidden');
         displayWord.innerText = word;
         displayTrans.innerText = "กำลังค้นหา...";
-
+        
         const apiResult = await fetchTranslation(word);
         const newEntry = {
             word: word,
@@ -146,7 +147,7 @@ function showData(data) {
     document.getElementById('futureTense').innerText = data.future;
 }
 
-// --- 📋 คลังคำศัพท์และระบบลบ ---
+// --- 📋 จัดการคลังและสถิติ ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
@@ -162,7 +163,7 @@ function openVocabList() {
                 </span>
             </td>
             <td class="p-4 text-center">
-                <button onclick="deleteWord(${index})" class="hover:scale-125 transition-transform">🗑️</button>
+                <button onclick="deleteWord(${index})" class="text-slate-300 hover:text-red-500 transition-transform hover:scale-125">🗑️</button>
             </td>`;
         tableBody.appendChild(row);
     });
@@ -170,7 +171,7 @@ function openVocabList() {
 }
 
 function deleteWord(index) {
-    if (confirm(`ลบคำว่า "${db[index].word}"?`)) {
+    if (confirm(`คุณต้องการลบคำว่า "${db[index].word}" ใช่หรือไม่?`)) {
         stats.forgotten = Math.max(0, stats.forgotten - (db[index].forgotCount || 0));
         db.splice(index, 1);
         updateUI();
