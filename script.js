@@ -1,12 +1,12 @@
 // ==========================================
-// 🌟 1. ตั้งค่า SUPABASE (แก้คีย์ตรงนี้!)
+// 🌟 1. ตั้งค่า SUPABASE
 // ==========================================
 const SUPABASE_URL = 'https://oobldgtmzjdbiyqzcjyw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vYmxkZ3RtempkYml5cXpjanl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2OTI2ODAsImV4cCI6MjA5MjI2ODY4MH0.D7k_8tLHXhUn1cJvb78IUwXIh4AtojHHgpfnQ1kjmjw';
 const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let db = []; // คลังคำศัพท์ที่จะใช้ (ดึงจาก Local หรือ Cloud)
+let db = []; 
 let stats = { forgotten: 0 };
 let commonWords = []; 
 let chartInstance = null;
@@ -28,7 +28,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
         document.getElementById('userName').innerText = currentUser.user_metadata.full_name || currentUser.email;
         document.getElementById('userAvatar').src = currentUser.user_metadata.avatar_url || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
-        // 🌟 ไฮไลต์: ระบบดูดคำจาก Local เครื่องนี้ขึ้น Cloud ทันทีเมื่อล็อกอิน!
+        // ดูดคำจาก Local ขึ้น Cloud ทันทีเมื่อล็อกอิน
         await syncLocalToCloud();
         await loadDataFromCloud();
     } else {
@@ -42,8 +42,19 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     }
 });
 
+// 🌟 แก้บัคการ Redirect หลังจาก Login ด้วย Discord
 async function loginWithDiscord() {
-    await supabase.auth.signInWithOAuth({ provider: 'discord' });
+    const { data, error } = await supabase.auth.signInWithOAuth({ 
+        provider: 'discord',
+        options: {
+            // บังคับให้ Redirect กลับมาที่หน้าเว็บปัจจุบันเป๊ะๆ
+            redirectTo: window.location.origin + window.location.pathname 
+        }
+    });
+    
+    if (error) {
+        alert("เกิดข้อผิดพลาดในการล็อกอิน: " + error.message);
+    }
 }
 
 async function logout() {
@@ -55,14 +66,12 @@ async function logout() {
 // ☁️ 2. ระบบจัดการข้อมูล (Data Management)
 // ==========================================
 
-// โหลดจาก Local (ตอนยังไม่ล็อกอิน)
 function loadDataFromLocal() {
     db = JSON.parse(localStorage.getItem('vocab_db')) || [];
     recalculateStats();
     initChart();
 }
 
-// โหลดจาก Cloud (ตอนล็อกอินแล้ว)
 async function loadDataFromCloud() {
     const { data, error } = await supabase
         .from('vocab_entries')
@@ -71,7 +80,7 @@ async function loadDataFromCloud() {
         
     if (!error) {
         db = data.map(item => ({
-            db_id: item.id, // เก็บ ID ของ DB ไว้ลบข้อมูล
+            db_id: item.id,
             word: item.word,
             translation: item.translation,
             altTrans: item.alt_trans,
@@ -86,10 +95,9 @@ async function loadDataFromCloud() {
     initChart();
 }
 
-// 🌟 ระบบดูด Local ขึ้น Cloud (ทำแค่ครั้งเดียว)
 async function syncLocalToCloud() {
     const localDb = JSON.parse(localStorage.getItem('vocab_db')) || [];
-    if (localDb.length === 0) return; // ไม่มีอะไรให้ซิงค์
+    if (localDb.length === 0) return; 
 
     const recordsToInsert = localDb.map(item => ({
         user_id: currentUser.id,
@@ -105,15 +113,13 @@ async function syncLocalToCloud() {
 
     const { error } = await supabase.from('vocab_entries').insert(recordsToInsert);
     if (!error) {
-        localStorage.removeItem('vocab_db'); // ล้างเครื่องทิ้ง เพราะขึ้น Cloud แล้ว!
+        localStorage.removeItem('vocab_db'); 
         alert('☁️ ซิงค์คำศัพท์จากเครื่องนี้ขึ้น Cloud สำเร็จแล้วเพื่อน!');
     }
 }
 
-// ฟังก์ชันเซฟข้อมูล (เช็คว่าเซฟลง Local หรือ Cloud)
 async function saveEntry(newEntry) {
     if (currentUser) {
-        // ลง Cloud
         const record = {
             user_id: currentUser.id,
             word: newEntry.word,
@@ -131,7 +137,6 @@ async function saveEntry(newEntry) {
             db.push(newEntry);
         }
     } else {
-        // ลง Local
         db.push(newEntry);
         localStorage.setItem('vocab_db', JSON.stringify(db));
     }
@@ -201,7 +206,7 @@ function updateChart() {
 }
 
 // ==========================================
-// 🧠 4. ระบบ Dictionary & AI Logic (คงเดิมจากเวอร์ชันสมบูรณ์)
+// 🧠 4. ระบบ Dictionary & AI Logic
 // ==========================================
 async function initDictionary() {
     try {
@@ -364,7 +369,6 @@ async function processVocab() {
     const isChinese = isChineseChar(word);
     const lowerWord = isChinese ? word : word.toLowerCase();
     
-    // หาจาก db ที่โหลดมา (Local หรือ Cloud)
     const existingIndex = db.findIndex(item => (isChinese ? item.word === lowerWord : item.word.toLowerCase() === lowerWord));
 
     const resultCard = document.getElementById('resultCard');
@@ -377,7 +381,7 @@ async function processVocab() {
 
     if (existingIndex !== -1) {
         displayWord.innerHTML = `<span class="forgotten-word">${word}</span>`;
-        await updateForgotCount(existingIndex); // อัปเดตลืมคำ ขึ้น Cloud
+        await updateForgotCount(existingIndex);
         showData(db[existingIndex]);
     } else {
         loadingOverlay?.classList.remove('hidden');
@@ -404,7 +408,7 @@ async function processVocab() {
             forgotCount: 0
         };
 
-        await saveEntry(newEntry); // เซฟลง Local หรือ Cloud
+        await saveEntry(newEntry);
         showData(newEntry);
         loadingOverlay?.classList.add('hidden');
     }
@@ -470,6 +474,59 @@ function openVocabList() {
         tableBody.appendChild(row);
     });
     document.getElementById('vocabModal').classList.remove('hidden');
+}
+
+async function updateOldWords() {
+    const icon = document.getElementById('syncIcon');
+    icon.classList.add('inline-block', 'spin-fast'); 
+
+    const wordsToUpdate = db.filter(item => item.lang !== 'zh' && (!item.pos || item.altTrans === undefined));
+    
+    if (wordsToUpdate.length === 0) {
+        icon.classList.remove('spin-fast');
+        alert(`คำทั้งหมดอัปเดตสมบูรณ์แล้ว!`);
+        return;
+    }
+
+    const updatePromises = wordsToUpdate.map(async (item) => {
+        const newPos = await fetchPartOfSpeech(item.word, false);
+        item.pos = newPos;
+
+        const posLower = newPos.toLowerCase();
+        if (item.word.includes(' ') || !posLower.includes('verb')) {
+            item.data1 = "-"; 
+            item.data2 = "-"; 
+        }
+
+        if (item.altTrans === undefined) {
+            try {
+                const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&dt=bd&q=${encodeURIComponent(item.word)}`;
+                const gtRes = await fetch(gtUrl);
+                const gtData = await gtRes.json();
+                
+                let altTranslations = [];
+                if (gtData[1]) {
+                    gtData[1].forEach(posGroup => {
+                        if (posGroup[1]) altTranslations.push(...posGroup[1]);
+                    });
+                    altTranslations = [...new Set(altTranslations)].filter(t => t !== item.translation).slice(0, 5);
+                }
+                item.altTrans = altTranslations.length > 0 ? altTranslations.join(', ') : "";
+            } catch (e) {
+                item.altTrans = "";
+            }
+        }
+    });
+
+    await Promise.all(updatePromises);
+
+    icon.classList.remove('spin-fast'); 
+    updateUI();
+    
+    if (!document.getElementById('vocabModal').classList.contains('hidden')) {
+        openVocabList(); 
+    }
+    alert(`⚡ อัปเดตความหมายเพิ่มเติม และซ่อมแซมคำเก่าเรียบร้อยครับ R!`);
 }
 
 function closeVocabList() { document.getElementById('vocabModal').classList.add('hidden'); }
