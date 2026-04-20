@@ -103,7 +103,7 @@ function validateInput(text) {
     }
     
     if (/(.)\1\1/.test(word)) {
-        alertBox.innerHTML = `⚠️ คำว่า <b>"${word}"</b> สะกดแปลกๆ นะ`;
+        alertBox.innerHTML = `⚠️ คำว่า <b>"${word}"</b> สะกดแปลกๆ นะเพื่อน`;
         alertBox.classList.remove('hidden');
         return false;
     }
@@ -112,7 +112,41 @@ function validateInput(text) {
     return true;
 }
 
-// --- 🌐 ระบบแปลภาษา & ดึงข้อมูลรากศัพท์ (Part of Speech) ---
+// --- 🌐 ระบบดึงข้อมูลรากศัพท์ (แยกออกมาเพื่อให้ใช้ร่วมกันได้) ---
+async function fetchPartOfSpeech(word) {
+    // 💡 ดักจับ Wh- Words เป็นพิเศษ เพื่อความชัวร์
+    const whWordsPOS = {
+        'who': 'Pronoun',
+        'what': 'Pronoun, Determiner, Adverb',
+        'where': 'Adverb, Conjunction, Pronoun',
+        'when': 'Adverb, Conjunction, Pronoun',
+        'why': 'Adverb, Conjunction, Noun',
+        'how': 'Adverb, Conjunction',
+        'which': 'Pronoun, Determiner',
+        'whom': 'Pronoun',
+        'whose': 'Pronoun, Determiner'
+    };
+
+    if (whWordsPOS[word.toLowerCase()]) {
+        return whWordsPOS[word.toLowerCase()];
+    }
+
+    // ถ้าไม่ใช่ Wh- ให้ดึงจาก API
+    try {
+        const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+        if (dictRes.ok) {
+            const dictData = await dictRes.json();
+            const posArray = dictData[0].meanings.map(m => m.partOfSpeech);
+            const uniquePos = [...new Set(posArray)];
+            return uniquePos.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
+        }
+    } catch (err) {
+        return "General";
+    }
+    return "General";
+}
+
+// --- 🌐 ระบบแปลภาษา Google ---
 async function fetchTranslation(word, isChinese) {
     try {
         const langCode = isChinese ? 'zh-CN' : 'en';
@@ -137,18 +171,7 @@ async function fetchTranslation(word, isChinese) {
         }
 
         if (!isChinese && !word.includes(' ')) {
-            try {
-                const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-                if (dictRes.ok) {
-                    const dictData = await dictRes.json();
-                    const meanings = dictData[0].meanings;
-                    const posArray = meanings.map(m => m.partOfSpeech);
-                    const uniquePos = [...new Set(posArray)];
-                    partOfSpeech = uniquePos.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
-                }
-            } catch (err) {
-                console.log("POS API Error", err);
-            }
+            partOfSpeech = await fetchPartOfSpeech(word);
         } else if (isChinese) {
             partOfSpeech = "Chinese Word";
         }
@@ -168,7 +191,7 @@ async function fetchTranslation(word, isChinese) {
 }
 
 function generatePastTense(word) {
-    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought', 'develop': 'developed', 'understand': 'understood' };
+    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought', 'develop': 'developed', 'understand': 'understood', 'remove': 'removed' };
     const low = word.toLowerCase();
     if (word.includes(' ')) return "Phrase";
     if (irregulars[low]) return irregulars[low];
@@ -273,7 +296,7 @@ function showData(data) {
     }
 }
 
-// --- 📋 คลังคำศัพท์ & อัปเดตคำเก่า ---
+// --- 📋 คลังคำศัพท์ & 🚀 อัปเดตคำเก่าแบบติดจรวด ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
@@ -308,43 +331,36 @@ function openVocabList() {
     document.getElementById('vocabModal').classList.remove('hidden');
 }
 
-// 🔄 ฟังก์ชันอัปเดตคำเก่า (ดึง POS สำหรับคำที่ยังไม่มี)
+// ⚡ ฟังก์ชันอัปเดตคำเก่าแบบรวดเร็ว (Parallel Fetching)
 async function updateOldWords() {
     const icon = document.getElementById('syncIcon');
-    icon.classList.add('inline-block', 'spin-fast'); // สั่งให้ไอคอนหมุน
+    icon.classList.add('inline-block', 'spin-fast'); 
 
-    let updatedCount = 0;
+    // รวบรวมคำที่ต้องอัปเดต
+    const wordsToUpdate = db.filter(item => (!item.pos || item.pos === "General") && item.lang !== 'zh' && !item.word.includes(' '));
     
-    for (let i = 0; i < db.length; i++) {
-        // อัปเดตเฉพาะคำอังกฤษที่ยังไม่มีหมวดหมู่คำ หรือเป็นค่า General เดิมๆ
-        if ((!db[i].pos || db[i].pos === "General") && db[i].lang !== 'zh' && !db[i].word.includes(' ')) {
-            try {
-                const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(db[i].word)}`);
-                if (dictRes.ok) {
-                    const dictData = await dictRes.json();
-                    const meanings = dictData[0].meanings;
-                    const posArray = meanings.map(m => m.partOfSpeech);
-                    const uniquePos = [...new Set(posArray)];
-                    db[i].pos = uniquePos.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
-                    updatedCount++;
-                }
-            } catch (err) {
-                console.log(`Failed to update: ${db[i].word}`);
-            }
-        }
-    }
-
-    icon.classList.remove('spin-fast'); // หยุดหมุน
-
-    if (updatedCount > 0) {
-        updateUI();
-        if (!document.getElementById('vocabModal').classList.contains('hidden')) {
-            openVocabList(); // รีเฟรชตารางใหม่
-        }
-        alert(`ดึงหมวดหมู่คำเก่าสำเร็จ ${updatedCount} คำเรียบร้อยแล้วครับ R!`);
-    } else {
+    if (wordsToUpdate.length === 0) {
+        icon.classList.remove('spin-fast');
         alert(`คำทั้งหมดอัปเดตสมบูรณ์แล้ว ไม่มีคำเก่าตกค้างครับ!`);
+        return;
     }
+
+    // สร้าง Promise ดึงข้อมูลพร้อมกันทั้งหมด (Speed Boost!)
+    const updatePromises = wordsToUpdate.map(async (item) => {
+        const newPos = await fetchPartOfSpeech(item.word);
+        item.pos = newPos;
+    });
+
+    // รอให้โหลดเสร็จทั้งหมดทีเดียว
+    await Promise.all(updatePromises);
+
+    icon.classList.remove('spin-fast'); 
+    updateUI();
+    
+    if (!document.getElementById('vocabModal').classList.contains('hidden')) {
+        openVocabList(); 
+    }
+    alert(`⚡ อัปเดตหมวดหมู่คำเก่า ${wordsToUpdate.length} คำ สำเร็จอย่างรวดเร็วครับ!`);
 }
 
 function deleteWord(index) {
