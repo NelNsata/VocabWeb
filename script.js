@@ -1,9 +1,11 @@
 // ==========================================
-// 🌟 1. ตั้งค่า SUPABASE (อัปเดตคีย์จริงแล้ว)
+// 🌟 1. ตั้งค่า SUPABASE (เปลี่ยนชื่อตัวแปรแก้บัคแล้ว)
 // ==========================================
 const SUPABASE_URL = 'https://oobldgtmzjdbiyqzcjyw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vYmxkZ3RtempkYml5cXpjanl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2OTI2ODAsImV4cCI6MjA5MjI2ODY4MH0.D7k_8tLHXhUn1cJvb78IUwXIh4AtojHHgpfnQ1kjmjw';
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ใช้ชื่อตัวแปร 'supa' แทน เพื่อไม่ให้ไปชนกับของเดิมในระบบ
+const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
 let db = []; 
@@ -12,7 +14,7 @@ let commonWords = [];
 let chartInstance = null;
 
 // --- 🔐 ระบบ Authentication (Discord) & Local Sync ---
-supabase.auth.onAuthStateChange(async (event, session) => {
+supa.auth.onAuthStateChange(async (event, session) => {
     currentUser = session?.user || null;
     const loginBtn = document.getElementById('loginBtn');
     const userInfo = document.getElementById('userInfo');
@@ -42,14 +44,9 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     }
 });
 
-// 🌟 แก้บัคการ Redirect หลังจาก Login ด้วย Discord
 async function loginWithDiscord() {
-    const { data, error } = await supabase.auth.signInWithOAuth({ 
-        provider: 'discord',
-        options: {
-            // บังคับให้ Redirect กลับมาที่หน้าเว็บปัจจุบันเป๊ะๆ (สำหรับ Local Server)
-            redirectTo: window.location.origin + window.location.pathname 
-        }
+    const { data, error } = await supa.auth.signInWithOAuth({ 
+        provider: 'discord'
     });
     
     if (error) {
@@ -58,7 +55,7 @@ async function loginWithDiscord() {
 }
 
 async function logout() {
-    await supabase.auth.signOut();
+    await supa.auth.signOut();
     window.location.reload();
 }
 
@@ -73,7 +70,7 @@ function loadDataFromLocal() {
 }
 
 async function loadDataFromCloud() {
-    const { data, error } = await supabase
+    const { data, error } = await supa
         .from('vocab_entries')
         .select('*')
         .order('id', { ascending: true });
@@ -111,7 +108,7 @@ async function syncLocalToCloud() {
         forgot_count: item.forgotCount || 0
     }));
 
-    const { error } = await supabase.from('vocab_entries').insert(recordsToInsert);
+    const { error } = await supa.from('vocab_entries').insert(recordsToInsert);
     if (!error) {
         localStorage.removeItem('vocab_db'); 
         alert('☁️ ซิงค์คำศัพท์จากเครื่องนี้ขึ้น Cloud สำเร็จแล้วเพื่อน!');
@@ -131,7 +128,7 @@ async function saveEntry(newEntry) {
             data2: newEntry.data2 || '',
             forgot_count: newEntry.forgotCount || 0
         };
-        const { data, error } = await supabase.from('vocab_entries').insert([record]).select();
+        const { data, error } = await supa.from('vocab_entries').insert([record]).select();
         if (!error && data) {
             newEntry.db_id = data[0].id;
             db.push(newEntry);
@@ -148,7 +145,7 @@ async function updateForgotCount(index) {
     db[index].forgotCount = (db[index].forgotCount || 0) + 1;
     
     if (currentUser && db[index].db_id) {
-        await supabase.from('vocab_entries').update({ forgot_count: db[index].forgotCount }).eq('id', db[index].db_id);
+        await supa.from('vocab_entries').update({ forgot_count: db[index].forgotCount }).eq('id', db[index].db_id);
     } else {
         localStorage.setItem('vocab_db', JSON.stringify(db));
     }
@@ -159,7 +156,7 @@ async function updateForgotCount(index) {
 async function deleteWord(index) {
     if (confirm(`ลบคำนี้ออกจากคลังความจำ?`)) {
         if (currentUser && db[index].db_id) {
-            await supabase.from('vocab_entries').delete().eq('id', db[index].db_id);
+            await supa.from('vocab_entries').delete().eq('id', db[index].db_id);
         }
         db.splice(index, 1);
         if (!currentUser) localStorage.setItem('vocab_db', JSON.stringify(db));
@@ -517,9 +514,8 @@ async function updateOldWords() {
             }
         }
         
-        // ถ้าล็อกอินอยู่และเป็นคำในฐานข้อมูล ต้องสั่ง Update ขึ้น Cloud ด้วย
         if (currentUser && item.db_id) {
-            await supabase.from('vocab_entries').update({
+            await supa.from('vocab_entries').update({
                 pos: item.pos,
                 data1: item.data1,
                 data2: item.data2,
