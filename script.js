@@ -157,20 +157,18 @@ async function fetchPartOfSpeech(word, isChinese) {
     }
 }
 
-// --- 🌐 ระบบแปลภาษา Google (พร้อมดึงความหมายทางเลือก) ---
+// --- 🌐 ระบบแปลภาษา Google ---
 async function fetchTranslation(word, isChinese) {
     try {
         const langCode = isChinese ? 'zh-CN' : 'en';
-        // 🌟 เพิ่มพารามิเตอร์ dt=bd เพื่อขอ Dictionary Data (ความหมายทางเลือก)
         const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${langCode}&tl=th&dt=t&dt=rm&dt=bd&q=${encodeURIComponent(word)}`;
         const gtRes = await fetch(gtUrl);
         const gtData = await gtRes.json();
         
         let translatedText = gtData[0][0][0];
         let pinyinText = "-";
-        let altTranslations = []; // เก็บความหมายทางเลือก
+        let altTranslations = []; 
 
-        // 🌟 ดึงข้อมูลพินอิน
         if (isChinese && gtData[0]) {
             for (let i = 0; i < gtData[0].length; i++) {
                 if (gtData[0][i][2] || gtData[0][i][3]) {
@@ -179,15 +177,12 @@ async function fetchTranslation(word, isChinese) {
             }
         }
 
-        // 🌟 ดึงข้อมูลความหมายทางเลือก (Alternative Translations) จาก gtData[1]
         if (gtData[1]) {
             gtData[1].forEach(posGroup => {
-                // posGroup[1] จะเป็น Array ของคำแปลในหมวดหมู่นั้นๆ
                 if (posGroup[1]) {
                     altTranslations.push(...posGroup[1]);
                 }
             });
-            // กรองคำที่ซ้ำกัน และกรองคำที่เป็นคำแปลหลักออกไปแล้ว (เอาแค่ 5 คำแรกพอไม่ให้รก)
             altTranslations = [...new Set(altTranslations)]
                 .filter(t => t !== translatedText)
                 .slice(0, 5);
@@ -214,7 +209,7 @@ async function fetchTranslation(word, isChinese) {
 
         return {
             translation: translatedText,
-            altTrans: altText, // ส่งความหมายทางเลือกกลับไป
+            altTrans: altText, 
             lang: isChinese ? 'zh' : 'en',
             pinyin: pinyinText,
             pos: partOfSpeech, 
@@ -281,7 +276,7 @@ async function processVocab() {
         const newEntry = {
             word: word, 
             translation: apiResult.translation,
-            altTrans: apiResult.altTrans, // บันทึกความหมายทางเลือก
+            altTrans: apiResult.altTrans, 
             lang: apiResult.lang,
             pos: apiResult.pos, 
             data1: isChinese ? apiResult.pinyin : apiResult.past,
@@ -298,22 +293,20 @@ async function processVocab() {
     updateUI();
 }
 
-// 🎨 แสดงข้อมูลขึ้นหน้าจอ
 function showData(data) {
-    // 🌟 แสดงคำแปลหลัก และ ความหมายรอง (ถ้ามี)
     let transHtml = data.translation;
     if (data.altTrans) {
-        transHtml += `<br><span class="text-sm text-slate-400 font-normal italic">ความหมายอื่นๆ: ${data.altTrans}</span>`;
+        transHtml += `<br><span class="text-base md:text-lg text-slate-400 font-normal italic">ความหมายอื่นๆ: ${data.altTrans}</span>`;
     }
     document.getElementById('displayTrans').innerHTML = transHtml;
     
     const badge = document.getElementById('langBadge');
     if (data.lang === 'zh') {
         badge.innerText = "🇨🇳 Chinese";
-        badge.className = "text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-600 border border-red-200 shadow-sm";
+        badge.className = "text-xs md:text-sm font-bold px-3 py-1.5 rounded-full bg-red-100 text-red-600 border border-red-200 shadow-sm";
     } else {
         badge.innerText = "🇬🇧 English";
-        badge.className = "text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-blue-600 border border-blue-200 shadow-sm";
+        badge.className = "text-xs md:text-sm font-bold px-3 py-1.5 rounded-full bg-blue-100 text-blue-600 border border-blue-200 shadow-sm";
     }
 
     const posBadge = document.getElementById('posBadge');
@@ -342,7 +335,7 @@ function showData(data) {
     }
 }
 
-// --- 📋 คลังคำศัพท์ ---
+// --- 📋 คลังคำศัพท์ & อัปเดตตารางให้ตัวใหญ่ขึ้น ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
@@ -350,43 +343,43 @@ function openVocabList() {
         const flag = item.lang === 'zh' ? '🇨🇳' : '🇬🇧';
         
         const posHtml = (item.pos && item.pos !== "Unknown") 
-            ? `<br><span class="inline-block mt-1 text-[9px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">${item.pos}</span>` 
+            ? `<br><span class="inline-block mt-2 text-[10px] md:text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-black uppercase tracking-wider">${item.pos}</span>` 
             : '';
             
-        // 🌟 แสดงความหมายทางเลือกในตาราง
-        const altHtml = item.altTrans ? `<br><span class="text-[10px] text-slate-400">อื่นๆ: ${item.altTrans}</span>` : '';
+        const altHtml = item.altTrans ? `<br><span class="text-xs md:text-sm text-slate-400 mt-1 inline-block">อื่นๆ: ${item.altTrans}</span>` : '';
+        
+        // 🌟 แก้บัค undefined: ใช้ item.data1 || '-'
+        const infoData = item.data1 !== undefined ? item.data1 : '-';
 
         const row = document.createElement('tr');
-        row.className = "hover:bg-blue-50/20 transition duration-200";
+        row.className = "hover:bg-blue-50/30 transition duration-200 border-b border-slate-50";
         row.innerHTML = `
-            <td class="p-6">
-                <span class="font-black text-slate-700 ${item.lang === 'zh' ? 'text-lg' : 'uppercase text-xs'}">${flag} ${item.word}</span>
+            <td class="p-4 md:p-6 align-top">
+                <span class="font-black text-slate-700 ${item.lang === 'zh' ? 'text-xl md:text-2xl' : 'uppercase text-sm md:text-base lg:text-lg'}">${flag} ${item.word}</span>
                 ${posHtml}
             </td>
-            <td class="p-6 text-slate-600 text-sm font-medium">
+            <td class="p-4 md:p-6 text-slate-700 text-base md:text-lg font-medium align-top">
                 ${item.translation}
                 ${altHtml}
-                <br><span class="text-[10px] text-slate-400 font-normal italic">${item.data1}</span>
+                <br><span class="text-sm md:text-base text-slate-400 font-normal italic mt-1 inline-block">${infoData}</span>
             </td>
-            <td class="p-6 text-center">
-                <span class="px-3 py-1 rounded-full text-[10px] font-black ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">
+            <td class="p-4 md:p-6 text-center align-middle">
+                <span class="px-3 py-1 md:py-1.5 rounded-full text-xs md:text-sm font-black ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">
                     ${item.forgotCount || 0}
                 </span>
             </td>
-            <td class="p-6 text-center">
-                <button onclick="deleteWord(${index})" class="text-slate-300 hover:text-red-500 transition-all hover:scale-125">🗑️</button>
+            <td class="p-4 md:p-6 text-center align-middle">
+                <button onclick="deleteWord(${index})" class="text-slate-300 hover:text-red-500 text-xl md:text-2xl transition-all hover:scale-125">🗑️</button>
             </td>`;
         tableBody.appendChild(row);
     });
     document.getElementById('vocabModal').classList.remove('hidden');
 }
 
-// ⚡ ฟังก์ชันอัปเดตคำเก่าแบบรวดเร็ว (อัปเดตทั้ง POS, Tense และดึงคำแปลอื่นๆ ให้ด้วย)
 async function updateOldWords() {
     const icon = document.getElementById('syncIcon');
     icon.classList.add('inline-block', 'spin-fast'); 
 
-    // ดึงคำที่ยังไม่มี altTrans หรือ POS เพื่ออัปเดต
     const wordsToUpdate = db.filter(item => item.lang !== 'zh' && (!item.pos || item.altTrans === undefined));
     
     if (wordsToUpdate.length === 0) {
@@ -396,18 +389,15 @@ async function updateOldWords() {
     }
 
     const updatePromises = wordsToUpdate.map(async (item) => {
-        // อัปเดต POS
         const newPos = await fetchPartOfSpeech(item.word, false);
         item.pos = newPos;
 
-        // ซ่อม Tense
         const posLower = newPos.toLowerCase();
         if (item.word.includes(' ') || !posLower.includes('verb')) {
             item.data1 = "-"; 
             item.data2 = "-"; 
         }
 
-        // 🌟 ดึงคำแปลอื่นๆ (Alternative Translations) สำหรับคำเก่า
         if (item.altTrans === undefined) {
             try {
                 const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&dt=bd&q=${encodeURIComponent(item.word)}`;

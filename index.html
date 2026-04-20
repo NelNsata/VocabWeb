@@ -10,75 +10,75 @@
 </head>
 <body class="bg-slate-50 min-h-screen font-sans text-slate-900">
 
-    <div class="container mx-auto px-4 py-8 max-w-4xl">
-        <h1 class="text-3xl font-bold text-slate-800 mb-8 text-center flex items-center justify-center gap-2">
-            🧠 Smart Vocab <span class="text-xs font-black bg-gradient-to-r from-blue-600 to-purple-600 text-white px-3 py-1 rounded-full shadow-md">PRO EDITION</span>
+    <div class="container mx-auto px-4 py-8 max-w-5xl">
+        <h1 class="text-3xl md:text-4xl lg:text-5xl font-bold text-slate-800 mb-8 text-center flex items-center justify-center gap-2 transition-all">
+            🧠 Smart Vocab <span class="text-xs md:text-sm font-black bg-gradient-to-r from-blue-600 to-purple-600 text-white px-3 py-1 rounded-full shadow-md">PRO EDITION</span>
         </h1>
 
-        <div class="bg-white p-6 rounded-3xl shadow-sm mb-4 border border-slate-100">
+        <div class="bg-white p-6 md:p-8 rounded-3xl shadow-sm mb-6 border border-slate-100">
             <div class="flex gap-2 relative">
                 <input type="text" id="vocabInput" placeholder="พิมพ์ศัพท์อังกฤษ หรือ จีน (เช่น develop, 学习)..." 
-                    class="flex-1 p-4 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none text-lg transition-all"
+                    class="flex-1 p-4 md:p-5 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none text-lg md:text-xl lg:text-2xl transition-all"
                     autocomplete="off">
-                <button onclick="processVocab()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-2xl font-bold transition shadow-lg shadow-blue-200">
+                <button onclick="processVocab()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 md:px-10 rounded-2xl font-bold text-lg md:text-xl transition shadow-lg shadow-blue-200">
                     เพิ่ม/เช็ค
                 </button>
             </div>
             
-            <div id="grammarAlert" class="hidden mt-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-sm animate-fade-in shadow-sm"></div>
+            <div id="grammarAlert" class="hidden mt-4 p-4 md:p-5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-sm md:text-base animate-fade-in shadow-sm"></div>
 
-            <div class="mt-4 flex justify-center gap-4">
-                <button onclick="openVocabList()" class="text-blue-600 hover:text-blue-800 font-semibold text-sm flex items-center gap-1 transition">
+            <div class="mt-6 flex justify-center gap-6 items-center">
+                <button onclick="openVocabList()" class="text-blue-600 hover:text-blue-800 font-semibold text-base md:text-lg flex items-center gap-1 transition">
                     📖 ดูคลังคำศัพท์
                 </button>
-                <span id="dictStatus" class="text-[10px] text-slate-400 self-center uppercase tracking-widest font-bold italic">Loading 10K Words...</span>
+                <span id="dictStatus" class="text-xs md:text-sm text-slate-400 uppercase tracking-widest font-bold italic">Loading 10K Words...</span>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
             <div class="md:col-span-2 space-y-4">
-                <div id="resultCard" class="hidden bg-white p-8 rounded-3xl shadow-md border-l-[12px] border-blue-500 animate-fade-in relative overflow-hidden">
+                <div id="resultCard" class="hidden bg-white p-8 md:p-10 rounded-3xl shadow-md border-l-[12px] border-blue-500 animate-fade-in relative overflow-hidden">
                     <div id="loadingOverlay" class="hidden absolute inset-0 bg-white/90 flex items-center justify-center z-10 backdrop-blur-sm">
-                        <span class="text-blue-600 font-bold italic animate-pulse">กำลังวิเคราะห์รากศัพท์...</span>
+                        <span class="text-blue-600 text-lg md:text-xl font-bold italic animate-pulse">กำลังวิเคราะห์รากศัพท์...</span>
                     </div>
                     
-                    <div class="flex flex-wrap items-center gap-3 mb-2">
-                        <h2 id="displayWord" class="text-5xl font-black uppercase tracking-tighter"></h2>
-                        <span id="posBadge" class="hidden text-xs font-black px-3 py-1 rounded-full bg-purple-100 text-purple-700 border border-purple-200 shadow-sm uppercase tracking-wider"></span>
-                        <span id="langBadge" class="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200 shadow-sm"></span>
+                    <div class="flex flex-wrap items-center gap-3 mb-4">
+                        <h2 id="displayWord" class="text-5xl md:text-6xl lg:text-7xl font-black uppercase tracking-tighter"></h2>
+                        <span id="posBadge" class="hidden text-xs md:text-sm font-black px-4 py-1.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200 shadow-sm uppercase tracking-wider"></span>
+                        <span id="langBadge" class="text-xs md:text-sm font-bold px-4 py-1.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 shadow-sm"></span>
                     </div>
                     
-                    <p id="displayTrans" class="text-2xl text-slate-600 mb-6 font-medium"></p>
-                    <hr class="mb-6 border-slate-100">
+                    <p id="displayTrans" class="text-2xl md:text-3xl lg:text-4xl text-slate-600 mb-8 font-medium leading-tight"></p>
+                    <hr class="mb-8 border-slate-100">
                     
-                    <div class="grid grid-cols-2 gap-4">
-                        <div id="infoBox1" class="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                            <span id="infoLabel1" class="block text-blue-400 font-bold text-[10px] uppercase mb-1 tracking-widest"></span>
-                            <span id="infoValue1" class="text-blue-800 font-black italic text-xl"></span>
+                    <div class="grid grid-cols-2 gap-4 md:gap-6">
+                        <div id="infoBox1" class="bg-blue-50/50 p-4 md:p-6 rounded-2xl border border-blue-100">
+                            <span id="infoLabel1" class="block text-blue-400 font-bold text-xs md:text-sm uppercase mb-1 md:mb-2 tracking-widest"></span>
+                            <span id="infoValue1" class="text-blue-800 font-black italic text-xl md:text-2xl lg:text-3xl"></span>
                         </div>
-                        <div id="infoBox2" class="bg-green-50/50 p-4 rounded-2xl border border-green-100">
-                            <span id="infoLabel2" class="block text-green-400 font-bold text-[10px] uppercase mb-1 tracking-widest"></span>
-                            <span id="infoValue2" class="text-green-800 font-black italic text-xl"></span>
+                        <div id="infoBox2" class="bg-green-50/50 p-4 md:p-6 rounded-2xl border border-green-100">
+                            <span id="infoLabel2" class="block text-green-400 font-bold text-xs md:text-sm uppercase mb-1 md:mb-2 tracking-widest"></span>
+                            <span id="infoValue2" class="text-green-800 font-black italic text-xl md:text-2xl lg:text-3xl"></span>
                         </div>
                     </div>
                 </div>
                 <div id="welcomeMessage" class="text-center py-24 text-slate-400 bg-white shadow-inner rounded-3xl border-2 border-dashed border-slate-200">
-                    <p class="text-lg font-medium italic">พิมพ์คำศัพท์ ระบบจะแยกชนิดของคำ (Noun, Verb) ให้ทันที!</p>
+                    <p class="text-lg md:text-xl font-medium italic">พิมพ์คำศัพท์ ระบบจะแยกชนิดของคำให้ทันที!</p>
                 </div>
             </div>
 
-            <div class="bg-white p-6 rounded-3xl shadow-md self-start border border-slate-100">
-                <h3 class="font-black text-slate-400 mb-6 text-[10px] uppercase tracking-[0.2em] text-center italic">Memory Stats</h3>
+            <div class="bg-white p-6 md:p-8 rounded-3xl shadow-md self-start border border-slate-100">
+                <h3 class="font-black text-slate-400 mb-6 text-xs md:text-sm uppercase tracking-[0.2em] text-center italic">Memory Stats</h3>
                 <div class="space-y-6 text-center">
                     <div>
-                        <span class="block text-slate-400 text-[10px] font-bold uppercase mb-1">Total Vocab</span>
-                        <span id="totalCount" class="font-black text-4xl text-blue-600 tracking-tighter">0</span>
+                        <span class="block text-slate-400 text-xs md:text-sm font-bold uppercase mb-2">Total Vocab</span>
+                        <span id="totalCount" class="font-black text-5xl md:text-6xl text-blue-600 tracking-tighter">0</span>
                     </div>
-                    <div class="border-t border-slate-50 pt-4">
-                        <span class="block text-red-400 text-[10px] font-bold uppercase mb-1">Repeated (Forgot)</span>
-                        <span id="forgetCount" class="font-black text-4xl text-red-500 tracking-tighter">0</span>
+                    <div class="border-t border-slate-50 pt-6">
+                        <span class="block text-red-400 text-xs md:text-sm font-bold uppercase mb-2">Repeated (Forgot)</span>
+                        <span id="forgetCount" class="font-black text-5xl md:text-6xl text-red-500 tracking-tighter">0</span>
                     </div>
-                    <div class="pt-4 h-44 relative">
+                    <div class="pt-6 h-48 relative">
                         <canvas id="statChart"></canvas>
                     </div>
                 </div>
@@ -87,24 +87,24 @@
     </div>
 
     <div id="vocabModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-[2.5rem] w-full max-w-2xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col border border-white/20">
-            <div class="p-8 border-b flex justify-between items-center bg-slate-50/50">
-                <h2 class="text-2xl font-black text-slate-800 italic tracking-tighter uppercase">Vocabulary Vault</h2>
+        <div class="bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col border border-white/20">
+            <div class="p-6 md:p-8 border-b flex justify-between items-center bg-slate-50/50">
+                <h2 class="text-2xl md:text-3xl font-black text-slate-800 italic tracking-tighter uppercase">Vocabulary Vault</h2>
                 <div class="flex items-center gap-4">
-                    <button onclick="updateOldWords()" class="text-xs bg-purple-100 text-purple-700 border border-purple-200 font-bold px-4 py-2 rounded-xl hover:bg-purple-200 transition shadow-sm flex items-center gap-1">
+                    <button onclick="updateOldWords()" class="text-sm md:text-base bg-purple-100 text-purple-700 border border-purple-200 font-bold px-4 md:px-6 py-2 md:py-3 rounded-xl hover:bg-purple-200 transition shadow-sm flex items-center gap-2">
                         <span id="syncIcon">🔄</span> อัปเดตคำเก่า
                     </button>
-                    <button onclick="closeVocabList()" class="text-slate-300 hover:text-slate-900 text-4xl font-light transition">&times;</button>
+                    <button onclick="closeVocabList()" class="text-slate-300 hover:text-slate-900 text-4xl md:text-5xl font-light transition">&times;</button>
                 </div>
             </div>
             <div class="p-0 overflow-y-auto flex-1">
                 <table class="w-full text-left border-collapse">
                     <thead class="sticky top-0 bg-white/95 backdrop-blur shadow-sm z-10">
-                        <tr class="text-slate-400 text-[10px] uppercase font-black tracking-widest">
-                            <th class="p-6">Word Info</th>
-                            <th class="p-6">Translation</th>
-                            <th class="p-6 text-center">Repeat</th>
-                            <th class="p-6 text-center">Action</th>
+                        <tr class="text-slate-400 text-xs md:text-sm uppercase font-black tracking-widest">
+                            <th class="p-4 md:p-6">Word Info</th>
+                            <th class="p-4 md:p-6">Translation</th>
+                            <th class="p-4 md:p-6 text-center">Repeat</th>
+                            <th class="p-4 md:p-6 text-center">Action</th>
                         </tr>
                     </thead>
                     <tbody id="vocabTableBody" class="divide-y divide-slate-50"></tbody>
