@@ -1,5 +1,5 @@
 // ==========================================
-// 🌟 1. ตั้งค่า SUPABASE
+// 🌟 1. ตั้งค่า SUPABASE (อัปเดตคีย์จริงแล้ว)
 // ==========================================
 const SUPABASE_URL = 'https://oobldgtmzjdbiyqzcjyw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vYmxkZ3RtempkYml5cXpjanl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2OTI2ODAsImV4cCI6MjA5MjI2ODY4MH0.D7k_8tLHXhUn1cJvb78IUwXIh4AtojHHgpfnQ1kjmjw';
@@ -47,7 +47,7 @@ async function loginWithDiscord() {
     const { data, error } = await supabase.auth.signInWithOAuth({ 
         provider: 'discord',
         options: {
-            // บังคับให้ Redirect กลับมาที่หน้าเว็บปัจจุบันเป๊ะๆ
+            // บังคับให้ Redirect กลับมาที่หน้าเว็บปัจจุบันเป๊ะๆ (สำหรับ Local Server)
             redirectTo: window.location.origin + window.location.pathname 
         }
     });
@@ -515,6 +515,16 @@ async function updateOldWords() {
             } catch (e) {
                 item.altTrans = "";
             }
+        }
+        
+        // ถ้าล็อกอินอยู่และเป็นคำในฐานข้อมูล ต้องสั่ง Update ขึ้น Cloud ด้วย
+        if (currentUser && item.db_id) {
+            await supabase.from('vocab_entries').update({
+                pos: item.pos,
+                data1: item.data1,
+                data2: item.data2,
+                alt_trans: item.altTrans
+            }).eq('id', item.db_id);
         }
     });
 
