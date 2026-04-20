@@ -150,8 +150,8 @@ async function fetchPartOfSpeech(word, isChinese) {
             const uniquePos = [...new Set(posArray)];
             return uniquePos.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
         } else {
-            // 🌟 ทริคใหม่: ถ้า API หาคำไม่เจอ (404) มักจะเป็นชื่อเมือง/ชื่อเฉพาะ ให้ตีเป็น Proper Noun ไปเลย
-            return "Proper Noun (ชื่อเฉพาะ/สถานที่)";
+            // 🌟 แก้ไข: ถ้าหาไม่เจอ ให้แสดงว่า Unknown แทนที่จะบังคับเป็น Proper Noun
+            return "Unknown / Proper Noun";
         }
     } catch (err) {
         return "Unknown";
@@ -188,7 +188,7 @@ async function fetchTranslation(word, isChinese) {
         
         if (!isChinese) {
             const posLower = partOfSpeech.toLowerCase();
-            // 🌟 บังคับว่าต้องมีคำว่า 'verb' ชัดเจนเท่านั้น ถึงจะสร้างอดีต/อนาคตให้
+            // บังคับว่าต้องมีคำว่า 'verb' ชัดเจนเท่านั้น ถึงจะสร้างอดีต/อนาคตให้
             if (posLower.includes('verb')) {
                 past = generatePastTense(word);
                 future = "will " + word;
@@ -210,9 +210,12 @@ async function fetchTranslation(word, isChinese) {
 }
 
 function generatePastTense(word) {
+    // 🌟 ดักทางไว้ก่อน ถ้ามีช่องว่าง (วลี) ให้รีเทิร์นขีด (-) ทันที! ป้องกัน one thinged
+    if (word.includes(' ')) return "-"; 
+
     const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought', 'develop': 'developed', 'understand': 'understood', 'remove': 'removed', 'can': 'could' };
     const low = word.toLowerCase();
-    if (word.includes(' ')) return "Phrase";
+    
     if (irregulars[low]) return irregulars[low];
     if (low.endsWith('e')) return word + 'd';
     if (low.endsWith('y') && !/[aeiou]y$/.test(low)) return word.slice(0, -1) + 'ied';
@@ -315,7 +318,7 @@ function showData(data) {
     }
 }
 
-// --- 📋 คลังคำศัพท์ ---
+// --- 📋 คลังคำศัพท์ & อัปเดตคำเก่า ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
@@ -350,26 +353,29 @@ function openVocabList() {
     document.getElementById('vocabModal').classList.remove('hidden');
 }
 
-// ⚡ ฟังก์ชันอัปเดตคำเก่าแบบรวดเร็ว + ซ่อมบัค Tense มั่ว
+// ⚡ ฟังก์ชันอัปเดตคำเก่าแบบรวดเร็ว (ปลดล็อกข้อจำกัดให้แก้ "วลี" ด้วย)
 async function updateOldWords() {
     const icon = document.getElementById('syncIcon');
     icon.classList.add('inline-block', 'spin-fast'); 
 
-    const wordsToUpdate = db.filter(item => item.lang !== 'zh' && !item.word.includes(' '));
+    // 🌟 แก้ไข: ไม่กีดกันคำที่มีเว้นวรรคแล้ว ให้กวาดล้างคำอังกฤษทุกคำที่ผิดปกติ!
+    const wordsToUpdate = db.filter(item => item.lang !== 'zh');
     
     if (wordsToUpdate.length === 0) {
         icon.classList.remove('spin-fast');
-        alert(`คำทั้งหมดอัปเดตสมบูรณ์แล้ว ไม่มีคำเก่าตกค้างครับ!`);
+        alert(`คำทั้งหมดอัปเดตสมบูรณ์แล้ว!`);
         return;
     }
 
     const updatePromises = wordsToUpdate.map(async (item) => {
+        // อัปเดต POS
         const newPos = await fetchPartOfSpeech(item.word, false);
         item.pos = newPos;
 
-        // 🌟 แก้ไข Tense ของเก่า: ถ้าไม่ใช่ Verb ลบทิ้งให้หมด!
         const posLower = newPos.toLowerCase();
-        if (!posLower.includes('verb')) {
+        
+        // 🌟 แก้ไข: ถ้าเป็นวลี หรือ ไม่ใช่ Verb ให้ลบ Tense ทิ้งให้หมด
+        if (item.word.includes(' ') || !posLower.includes('verb')) {
             item.data1 = "-"; 
             item.data2 = "-"; 
         }
@@ -383,7 +389,7 @@ async function updateOldWords() {
     if (!document.getElementById('vocabModal').classList.contains('hidden')) {
         openVocabList(); 
     }
-    alert(`⚡ ซ่อมแซมคำว่า Mexicoed, Hied เสร็จเรียบร้อยแล้วครับ R!`);
+    alert(`⚡ ซ่อมแซมคำว่า one thinged สำเร็จเรียบร้อยแล้วครับ R!`);
 }
 
 function deleteWord(index) {
