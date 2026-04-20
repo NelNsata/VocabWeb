@@ -112,26 +112,41 @@ function validateInput(text) {
     return true;
 }
 
-// --- 🌐 ระบบดึงข้อมูลรากศัพท์ (แยกออกมาเพื่อให้ใช้ร่วมกันได้) ---
-async function fetchPartOfSpeech(word) {
-    // 💡 ดักจับ Wh- Words เป็นพิเศษ เพื่อความชัวร์
-    const whWordsPOS = {
-        'who': 'Pronoun',
-        'what': 'Pronoun, Determiner, Adverb',
-        'where': 'Adverb, Conjunction, Pronoun',
-        'when': 'Adverb, Conjunction, Pronoun',
-        'why': 'Adverb, Conjunction, Noun',
-        'how': 'Adverb, Conjunction',
-        'which': 'Pronoun, Determiner',
-        'whom': 'Pronoun',
-        'whose': 'Pronoun, Determiner'
-    };
+// --- 🧠 ระบบวิเคราะห์หมวดหมู่คำแบบอัจฉริยะ (Smart POS Detector) ---
+async function fetchPartOfSpeech(word, isChinese) {
+    const lowerWord = word.toLowerCase();
 
-    if (whWordsPOS[word.toLowerCase()]) {
-        return whWordsPOS[word.toLowerCase()];
+    // 🇨🇳 1. เช็คหมวดหมู่ภาษาจีนเบื้องต้น
+    if (isChinese) {
+        const greetingsZH = ['你好', '早安', '晚安', '再见', '谢谢', '对不起', '拜拜'];
+        if (greetingsZH.includes(word)) return "Greeting (คำทักทาย)";
+        
+        if (word.endsWith('国') || word.endsWith('兰') || word.endsWith('亚')) return "Proper Noun (ชื่อประเทศ/สถานที่)";
+        
+        if (word.length >= 4) return "Phrase / Idiom (วลี/สำนวน)";
+        return "Noun / Verb / General"; 
     }
 
-    // ถ้าไม่ใช่ Wh- ให้ดึงจาก API
+    // 🇬🇧 2. เช็คหมวดหมู่ภาษาอังกฤษแบบดักจับทันที
+    const whWordsPOS = {
+        'who': 'Pronoun', 'what': 'Pronoun, Adverb', 'where': 'Adverb, Conjunction',
+        'when': 'Adverb, Conjunction', 'why': 'Adverb, Conjunction, Noun',
+        'how': 'Adverb, Conjunction', 'which': 'Pronoun, Determiner',
+        'whom': 'Pronoun', 'whose': 'Pronoun, Determiner'
+    };
+    if (whWordsPOS[lowerWord]) return whWordsPOS[lowerWord];
+
+    const greetingsEN = ['hello', 'hi', 'hey', 'goodbye', 'bye', 'welcome', 'thanks', 'sorry', 'good morning', 'good night'];
+    if (greetingsEN.includes(lowerWord)) return "Interjection (คำทักทาย/อุทาน)";
+
+    const countriesEN = ['china', 'japan', 'korea', 'america', 'france', 'germany', 'italy', 'spain', 'thailand'];
+    if (countriesEN.includes(lowerWord) || lowerWord.endsWith('land') || lowerWord.endsWith('ia')) {
+        return "Proper Noun (ชื่อประเทศ/สถานที่)";
+    }
+
+    if (lowerWord.includes(' ')) return "Phrase (วลี/ประโยค)";
+
+    // 🌐 3. ดึง API กรณีเป็นคำทั่วไป
     try {
         const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
         if (dictRes.ok) {
@@ -143,6 +158,7 @@ async function fetchPartOfSpeech(word) {
     } catch (err) {
         return "General";
     }
+    
     return "General";
 }
 
@@ -156,7 +172,6 @@ async function fetchTranslation(word, isChinese) {
         
         let translatedText = gtData[0][0][0];
         let pinyinText = "-";
-        let partOfSpeech = "General"; 
 
         if (isChinese && gtData[0]) {
             for (let i = 0; i < gtData[0].length; i++) {
@@ -170,11 +185,7 @@ async function fetchTranslation(word, isChinese) {
             return { error: true };
         }
 
-        if (!isChinese && !word.includes(' ')) {
-            partOfSpeech = await fetchPartOfSpeech(word);
-        } else if (isChinese) {
-            partOfSpeech = "Chinese Word";
-        }
+        let partOfSpeech = await fetchPartOfSpeech(word, isChinese);
 
         return {
             translation: translatedText,
@@ -296,7 +307,7 @@ function showData(data) {
     }
 }
 
-// --- 📋 คลังคำศัพท์ & 🚀 อัปเดตคำเก่าแบบติดจรวด ---
+// --- 📋 คลังคำศัพท์ & อัปเดตคำเก่าติดจรวด ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
@@ -331,12 +342,10 @@ function openVocabList() {
     document.getElementById('vocabModal').classList.remove('hidden');
 }
 
-// ⚡ ฟังก์ชันอัปเดตคำเก่าแบบรวดเร็ว (Parallel Fetching)
 async function updateOldWords() {
     const icon = document.getElementById('syncIcon');
     icon.classList.add('inline-block', 'spin-fast'); 
 
-    // รวบรวมคำที่ต้องอัปเดต
     const wordsToUpdate = db.filter(item => (!item.pos || item.pos === "General") && item.lang !== 'zh' && !item.word.includes(' '));
     
     if (wordsToUpdate.length === 0) {
@@ -345,13 +354,12 @@ async function updateOldWords() {
         return;
     }
 
-    // สร้าง Promise ดึงข้อมูลพร้อมกันทั้งหมด (Speed Boost!)
     const updatePromises = wordsToUpdate.map(async (item) => {
-        const newPos = await fetchPartOfSpeech(item.word);
+        // อัปเดตการเรียกใช้ด้วยค่า isChinese เป็น false
+        const newPos = await fetchPartOfSpeech(item.word, false);
         item.pos = newPos;
     });
 
-    // รอให้โหลดเสร็จทั้งหมดทีเดียว
     await Promise.all(updatePromises);
 
     icon.classList.remove('spin-fast'); 
