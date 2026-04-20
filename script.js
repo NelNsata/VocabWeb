@@ -150,7 +150,6 @@ async function fetchPartOfSpeech(word, isChinese) {
             const uniquePos = [...new Set(posArray)];
             return uniquePos.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
         } else {
-            // 🌟 แก้ไข: ถ้าหาไม่เจอ ให้แสดงว่า Unknown แทนที่จะบังคับเป็น Proper Noun
             return "Unknown / Proper Noun";
         }
     } catch (err) {
@@ -158,17 +157,20 @@ async function fetchPartOfSpeech(word, isChinese) {
     }
 }
 
-// --- 🌐 ระบบแปลภาษา Google ---
+// --- 🌐 ระบบแปลภาษา Google (พร้อมดึงความหมายทางเลือก) ---
 async function fetchTranslation(word, isChinese) {
     try {
         const langCode = isChinese ? 'zh-CN' : 'en';
-        const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${langCode}&tl=th&dt=t&dt=rm&q=${encodeURIComponent(word)}`;
+        // 🌟 เพิ่มพารามิเตอร์ dt=bd เพื่อขอ Dictionary Data (ความหมายทางเลือก)
+        const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${langCode}&tl=th&dt=t&dt=rm&dt=bd&q=${encodeURIComponent(word)}`;
         const gtRes = await fetch(gtUrl);
         const gtData = await gtRes.json();
         
         let translatedText = gtData[0][0][0];
         let pinyinText = "-";
+        let altTranslations = []; // เก็บความหมายทางเลือก
 
+        // 🌟 ดึงข้อมูลพินอิน
         if (isChinese && gtData[0]) {
             for (let i = 0; i < gtData[0].length; i++) {
                 if (gtData[0][i][2] || gtData[0][i][3]) {
@@ -176,6 +178,22 @@ async function fetchTranslation(word, isChinese) {
                 }
             }
         }
+
+        // 🌟 ดึงข้อมูลความหมายทางเลือก (Alternative Translations) จาก gtData[1]
+        if (gtData[1]) {
+            gtData[1].forEach(posGroup => {
+                // posGroup[1] จะเป็น Array ของคำแปลในหมวดหมู่นั้นๆ
+                if (posGroup[1]) {
+                    altTranslations.push(...posGroup[1]);
+                }
+            });
+            // กรองคำที่ซ้ำกัน และกรองคำที่เป็นคำแปลหลักออกไปแล้ว (เอาแค่ 5 คำแรกพอไม่ให้รก)
+            altTranslations = [...new Set(altTranslations)]
+                .filter(t => t !== translatedText)
+                .slice(0, 5);
+        }
+
+        let altText = altTranslations.length > 0 ? altTranslations.join(', ') : "";
 
         if (translatedText.toLowerCase() === word.toLowerCase() && word.length > 2 && !isChinese) {
             return { error: true };
@@ -188,7 +206,6 @@ async function fetchTranslation(word, isChinese) {
         
         if (!isChinese) {
             const posLower = partOfSpeech.toLowerCase();
-            // บังคับว่าต้องมีคำว่า 'verb' ชัดเจนเท่านั้น ถึงจะสร้างอดีต/อนาคตให้
             if (posLower.includes('verb')) {
                 past = generatePastTense(word);
                 future = "will " + word;
@@ -197,6 +214,7 @@ async function fetchTranslation(word, isChinese) {
 
         return {
             translation: translatedText,
+            altTrans: altText, // ส่งความหมายทางเลือกกลับไป
             lang: isChinese ? 'zh' : 'en',
             pinyin: pinyinText,
             pos: partOfSpeech, 
@@ -210,7 +228,6 @@ async function fetchTranslation(word, isChinese) {
 }
 
 function generatePastTense(word) {
-    // 🌟 ดักทางไว้ก่อน ถ้ามีช่องว่าง (วลี) ให้รีเทิร์นขีด (-) ทันที! ป้องกัน one thinged
     if (word.includes(' ')) return "-"; 
 
     const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought', 'develop': 'developed', 'understand': 'understood', 'remove': 'removed', 'can': 'could' };
@@ -264,6 +281,7 @@ async function processVocab() {
         const newEntry = {
             word: word, 
             translation: apiResult.translation,
+            altTrans: apiResult.altTrans, // บันทึกความหมายทางเลือก
             lang: apiResult.lang,
             pos: apiResult.pos, 
             data1: isChinese ? apiResult.pinyin : apiResult.past,
@@ -280,8 +298,14 @@ async function processVocab() {
     updateUI();
 }
 
+// 🎨 แสดงข้อมูลขึ้นหน้าจอ
 function showData(data) {
-    document.getElementById('displayTrans').innerText = data.translation;
+    // 🌟 แสดงคำแปลหลัก และ ความหมายรอง (ถ้ามี)
+    let transHtml = data.translation;
+    if (data.altTrans) {
+        transHtml += `<br><span class="text-sm text-slate-400 font-normal italic">ความหมายอื่นๆ: ${data.altTrans}</span>`;
+    }
+    document.getElementById('displayTrans').innerHTML = transHtml;
     
     const badge = document.getElementById('langBadge');
     if (data.lang === 'zh') {
@@ -318,7 +342,7 @@ function showData(data) {
     }
 }
 
-// --- 📋 คลังคำศัพท์ & อัปเดตคำเก่า ---
+// --- 📋 คลังคำศัพท์ ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
@@ -328,6 +352,9 @@ function openVocabList() {
         const posHtml = (item.pos && item.pos !== "Unknown") 
             ? `<br><span class="inline-block mt-1 text-[9px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">${item.pos}</span>` 
             : '';
+            
+        // 🌟 แสดงความหมายทางเลือกในตาราง
+        const altHtml = item.altTrans ? `<br><span class="text-[10px] text-slate-400">อื่นๆ: ${item.altTrans}</span>` : '';
 
         const row = document.createElement('tr');
         row.className = "hover:bg-blue-50/20 transition duration-200";
@@ -337,8 +364,9 @@ function openVocabList() {
                 ${posHtml}
             </td>
             <td class="p-6 text-slate-600 text-sm font-medium">
-                ${item.translation} <br>
-                <span class="text-[10px] text-slate-400 font-normal italic">${item.data1}</span>
+                ${item.translation}
+                ${altHtml}
+                <br><span class="text-[10px] text-slate-400 font-normal italic">${item.data1}</span>
             </td>
             <td class="p-6 text-center">
                 <span class="px-3 py-1 rounded-full text-[10px] font-black ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">
@@ -353,13 +381,13 @@ function openVocabList() {
     document.getElementById('vocabModal').classList.remove('hidden');
 }
 
-// ⚡ ฟังก์ชันอัปเดตคำเก่าแบบรวดเร็ว (ปลดล็อกข้อจำกัดให้แก้ "วลี" ด้วย)
+// ⚡ ฟังก์ชันอัปเดตคำเก่าแบบรวดเร็ว (อัปเดตทั้ง POS, Tense และดึงคำแปลอื่นๆ ให้ด้วย)
 async function updateOldWords() {
     const icon = document.getElementById('syncIcon');
     icon.classList.add('inline-block', 'spin-fast'); 
 
-    // 🌟 แก้ไข: ไม่กีดกันคำที่มีเว้นวรรคแล้ว ให้กวาดล้างคำอังกฤษทุกคำที่ผิดปกติ!
-    const wordsToUpdate = db.filter(item => item.lang !== 'zh');
+    // ดึงคำที่ยังไม่มี altTrans หรือ POS เพื่ออัปเดต
+    const wordsToUpdate = db.filter(item => item.lang !== 'zh' && (!item.pos || item.altTrans === undefined));
     
     if (wordsToUpdate.length === 0) {
         icon.classList.remove('spin-fast');
@@ -372,12 +400,31 @@ async function updateOldWords() {
         const newPos = await fetchPartOfSpeech(item.word, false);
         item.pos = newPos;
 
+        // ซ่อม Tense
         const posLower = newPos.toLowerCase();
-        
-        // 🌟 แก้ไข: ถ้าเป็นวลี หรือ ไม่ใช่ Verb ให้ลบ Tense ทิ้งให้หมด
         if (item.word.includes(' ') || !posLower.includes('verb')) {
             item.data1 = "-"; 
             item.data2 = "-"; 
+        }
+
+        // 🌟 ดึงคำแปลอื่นๆ (Alternative Translations) สำหรับคำเก่า
+        if (item.altTrans === undefined) {
+            try {
+                const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&dt=bd&q=${encodeURIComponent(item.word)}`;
+                const gtRes = await fetch(gtUrl);
+                const gtData = await gtRes.json();
+                
+                let altTranslations = [];
+                if (gtData[1]) {
+                    gtData[1].forEach(posGroup => {
+                        if (posGroup[1]) altTranslations.push(...posGroup[1]);
+                    });
+                    altTranslations = [...new Set(altTranslations)].filter(t => t !== item.translation).slice(0, 5);
+                }
+                item.altTrans = altTranslations.length > 0 ? altTranslations.join(', ') : "";
+            } catch (e) {
+                item.altTrans = "";
+            }
         }
     });
 
@@ -389,7 +436,7 @@ async function updateOldWords() {
     if (!document.getElementById('vocabModal').classList.contains('hidden')) {
         openVocabList(); 
     }
-    alert(`⚡ ซ่อมแซมคำว่า one thinged สำเร็จเรียบร้อยแล้วครับ R!`);
+    alert(`⚡ อัปเดตความหมายเพิ่มเติม และซ่อมแซมคำเก่าเรียบร้อยครับ R!`);
 }
 
 function deleteWord(index) {
