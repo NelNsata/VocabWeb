@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vocab Remember & Stat (Eng/Zh)</title>
+    <title>Smart Vocab - Pro Edition</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -12,12 +12,12 @@
 
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <h1 class="text-3xl font-bold text-slate-800 mb-8 text-center flex items-center justify-center gap-2">
-            🧠 Smart Vocab <span class="text-sm font-normal bg-blue-100 text-blue-700 px-2 py-1 rounded-full">EN 🇬🇧 / ZH 🇨🇳</span>
+            🧠 Smart Vocab <span class="text-xs font-black bg-gradient-to-r from-blue-600 to-purple-600 text-white px-3 py-1 rounded-full shadow-md">PRO EDITION</span>
         </h1>
 
         <div class="bg-white p-6 rounded-3xl shadow-sm mb-4 border border-slate-100">
             <div class="flex gap-2 relative">
-                <input type="text" id="vocabInput" placeholder="พิมพ์ศัพท์อังกฤษ หรือ จีน (เช่น hello, 你好)..." 
+                <input type="text" id="vocabInput" placeholder="พิมพ์ศัพท์อังกฤษ หรือ จีน (เช่น develop, 学习)..." 
                     class="flex-1 p-4 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none text-lg transition-all"
                     autocomplete="off">
                 <button onclick="processVocab()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-2xl font-bold transition shadow-lg shadow-blue-200">
@@ -39,12 +39,13 @@
             <div class="md:col-span-2 space-y-4">
                 <div id="resultCard" class="hidden bg-white p-8 rounded-3xl shadow-md border-l-[12px] border-blue-500 animate-fade-in relative overflow-hidden">
                     <div id="loadingOverlay" class="hidden absolute inset-0 bg-white/90 flex items-center justify-center z-10 backdrop-blur-sm">
-                        <span class="text-blue-600 font-bold italic animate-pulse">กำลังแปลภาษา...</span>
+                        <span class="text-blue-600 font-bold italic animate-pulse">กำลังวิเคราะห์รากศัพท์...</span>
                     </div>
                     
-                    <div class="flex items-center gap-3 mb-2">
+                    <div class="flex flex-wrap items-center gap-3 mb-2">
                         <h2 id="displayWord" class="text-5xl font-black uppercase tracking-tighter"></h2>
-                        <span id="langBadge" class="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-500"></span>
+                        <span id="posBadge" class="hidden text-xs font-black px-3 py-1 rounded-full bg-purple-100 text-purple-700 border border-purple-200 shadow-sm uppercase tracking-wider"></span>
+                        <span id="langBadge" class="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200 shadow-sm"></span>
                     </div>
                     
                     <p id="displayTrans" class="text-2xl text-slate-600 mb-6 font-medium"></p>
@@ -62,7 +63,7 @@
                     </div>
                 </div>
                 <div id="welcomeMessage" class="text-center py-24 text-slate-400 bg-white shadow-inner rounded-3xl border-2 border-dashed border-slate-200">
-                    <p class="text-lg font-medium italic">พิมพ์ภาษาอังกฤษ หรือ จีน ระบบจะแยกให้เอง!</p>
+                    <p class="text-lg font-medium italic">พิมพ์คำศัพท์ ระบบจะแยกชนิดของคำ (Noun, Verb) ให้ทันที!</p>
                 </div>
             </div>
 
@@ -89,13 +90,18 @@
         <div class="bg-white rounded-[2.5rem] w-full max-w-2xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col border border-white/20">
             <div class="p-8 border-b flex justify-between items-center bg-slate-50/50">
                 <h2 class="text-2xl font-black text-slate-800 italic tracking-tighter uppercase">Vocabulary Vault</h2>
-                <button onclick="closeVocabList()" class="text-slate-300 hover:text-slate-900 text-4xl font-light transition">&times;</button>
+                <div class="flex items-center gap-4">
+                    <button onclick="updateOldWords()" class="text-xs bg-purple-100 text-purple-700 border border-purple-200 font-bold px-4 py-2 rounded-xl hover:bg-purple-200 transition shadow-sm flex items-center gap-1">
+                        <span id="syncIcon">🔄</span> อัปเดตคำเก่า
+                    </button>
+                    <button onclick="closeVocabList()" class="text-slate-300 hover:text-slate-900 text-4xl font-light transition">&times;</button>
+                </div>
             </div>
             <div class="p-0 overflow-y-auto flex-1">
                 <table class="w-full text-left border-collapse">
                     <thead class="sticky top-0 bg-white/95 backdrop-blur shadow-sm z-10">
                         <tr class="text-slate-400 text-[10px] uppercase font-black tracking-widest">
-                            <th class="p-6">Word</th>
+                            <th class="p-6">Word Info</th>
                             <th class="p-6">Translation</th>
                             <th class="p-6 text-center">Repeat</th>
                             <th class="p-6 text-center">Action</th>

@@ -33,3 +33,11 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 0 #92400e;
 }
+
+.spin-fast {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}
