@@ -116,18 +116,14 @@ function validateInput(text) {
 async function fetchPartOfSpeech(word, isChinese) {
     const lowerWord = word.toLowerCase();
 
-    // 🇨🇳 1. เช็คหมวดหมู่ภาษาจีนเบื้องต้น
     if (isChinese) {
         const greetingsZH = ['你好', '早安', '晚安', '再见', '谢谢', '对不起', '拜拜'];
         if (greetingsZH.includes(word)) return "Greeting (คำทักทาย)";
-        
         if (word.endsWith('国') || word.endsWith('兰') || word.endsWith('亚')) return "Proper Noun (ชื่อประเทศ/สถานที่)";
-        
         if (word.length >= 4) return "Phrase / Idiom (วลี/สำนวน)";
-        return "Noun / Verb / General"; 
+        return "Noun / Verb"; 
     }
 
-    // 🇬🇧 2. เช็คหมวดหมู่ภาษาอังกฤษแบบดักจับทันที
     const whWordsPOS = {
         'who': 'Pronoun', 'what': 'Pronoun, Adverb', 'where': 'Adverb, Conjunction',
         'when': 'Adverb, Conjunction', 'why': 'Adverb, Conjunction, Noun',
@@ -139,14 +135,13 @@ async function fetchPartOfSpeech(word, isChinese) {
     const greetingsEN = ['hello', 'hi', 'hey', 'goodbye', 'bye', 'welcome', 'thanks', 'sorry', 'good morning', 'good night'];
     if (greetingsEN.includes(lowerWord)) return "Interjection (คำทักทาย/อุทาน)";
 
-    const countriesEN = ['china', 'japan', 'korea', 'america', 'france', 'germany', 'italy', 'spain', 'thailand'];
+    const countriesEN = ['china', 'japan', 'korea', 'america', 'france', 'germany', 'italy', 'spain', 'thailand', 'london', 'england'];
     if (countriesEN.includes(lowerWord) || lowerWord.endsWith('land') || lowerWord.endsWith('ia')) {
         return "Proper Noun (ชื่อประเทศ/สถานที่)";
     }
 
     if (lowerWord.includes(' ')) return "Phrase (วลี/ประโยค)";
 
-    // 🌐 3. ดึง API กรณีเป็นคำทั่วไป
     try {
         const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
         if (dictRes.ok) {
@@ -154,12 +149,13 @@ async function fetchPartOfSpeech(word, isChinese) {
             const posArray = dictData[0].meanings.map(m => m.partOfSpeech);
             const uniquePos = [...new Set(posArray)];
             return uniquePos.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
+        } else {
+            // 🌟 ทริคใหม่: ถ้า API หาคำไม่เจอ (404) มักจะเป็นชื่อเมือง/ชื่อเฉพาะ ให้ตีเป็น Proper Noun ไปเลย
+            return "Proper Noun (ชื่อเฉพาะ/สถานที่)";
         }
     } catch (err) {
-        return "General";
+        return "Unknown";
     }
-    
-    return "General";
 }
 
 // --- 🌐 ระบบแปลภาษา Google ---
@@ -186,14 +182,26 @@ async function fetchTranslation(word, isChinese) {
         }
 
         let partOfSpeech = await fetchPartOfSpeech(word, isChinese);
+        
+        let past = "-";
+        let future = "-";
+        
+        if (!isChinese) {
+            const posLower = partOfSpeech.toLowerCase();
+            // 🌟 บังคับว่าต้องมีคำว่า 'verb' ชัดเจนเท่านั้น ถึงจะสร้างอดีต/อนาคตให้
+            if (posLower.includes('verb')) {
+                past = generatePastTense(word);
+                future = "will " + word;
+            }
+        }
 
         return {
             translation: translatedText,
             lang: isChinese ? 'zh' : 'en',
             pinyin: pinyinText,
             pos: partOfSpeech, 
-            past: isChinese ? "-" : generatePastTense(word),
-            future: isChinese ? "-" : "will " + word,
+            past: past,
+            future: future,
             error: false
         };
     } catch (e) {
@@ -202,7 +210,7 @@ async function fetchTranslation(word, isChinese) {
 }
 
 function generatePastTense(word) {
-    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought', 'develop': 'developed', 'understand': 'understood', 'remove': 'removed' };
+    const irregulars = { 'go': 'went', 'eat': 'ate', 'see': 'saw', 'do': 'did', 'buy': 'bought', 'develop': 'developed', 'understand': 'understood', 'remove': 'removed', 'can': 'could' };
     const low = word.toLowerCase();
     if (word.includes(' ')) return "Phrase";
     if (irregulars[low]) return irregulars[low];
@@ -282,7 +290,7 @@ function showData(data) {
     }
 
     const posBadge = document.getElementById('posBadge');
-    if (data.pos && data.pos !== "General" && data.pos !== "Chinese Word") {
+    if (data.pos && data.pos !== "Unknown") {
         posBadge.innerText = data.pos;
         posBadge.classList.remove('hidden');
     } else {
@@ -307,14 +315,14 @@ function showData(data) {
     }
 }
 
-// --- 📋 คลังคำศัพท์ & อัปเดตคำเก่าติดจรวด ---
+// --- 📋 คลังคำศัพท์ ---
 function openVocabList() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
     db.forEach((item, index) => {
         const flag = item.lang === 'zh' ? '🇨🇳' : '🇬🇧';
         
-        const posHtml = (item.pos && item.pos !== "General" && item.pos !== "Chinese Word") 
+        const posHtml = (item.pos && item.pos !== "Unknown") 
             ? `<br><span class="inline-block mt-1 text-[9px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">${item.pos}</span>` 
             : '';
 
@@ -342,11 +350,12 @@ function openVocabList() {
     document.getElementById('vocabModal').classList.remove('hidden');
 }
 
+// ⚡ ฟังก์ชันอัปเดตคำเก่าแบบรวดเร็ว + ซ่อมบัค Tense มั่ว
 async function updateOldWords() {
     const icon = document.getElementById('syncIcon');
     icon.classList.add('inline-block', 'spin-fast'); 
 
-    const wordsToUpdate = db.filter(item => (!item.pos || item.pos === "General") && item.lang !== 'zh' && !item.word.includes(' '));
+    const wordsToUpdate = db.filter(item => item.lang !== 'zh' && !item.word.includes(' '));
     
     if (wordsToUpdate.length === 0) {
         icon.classList.remove('spin-fast');
@@ -355,9 +364,15 @@ async function updateOldWords() {
     }
 
     const updatePromises = wordsToUpdate.map(async (item) => {
-        // อัปเดตการเรียกใช้ด้วยค่า isChinese เป็น false
         const newPos = await fetchPartOfSpeech(item.word, false);
         item.pos = newPos;
+
+        // 🌟 แก้ไข Tense ของเก่า: ถ้าไม่ใช่ Verb ลบทิ้งให้หมด!
+        const posLower = newPos.toLowerCase();
+        if (!posLower.includes('verb')) {
+            item.data1 = "-"; 
+            item.data2 = "-"; 
+        }
     });
 
     await Promise.all(updatePromises);
@@ -368,7 +383,7 @@ async function updateOldWords() {
     if (!document.getElementById('vocabModal').classList.contains('hidden')) {
         openVocabList(); 
     }
-    alert(`⚡ อัปเดตหมวดหมู่คำเก่า ${wordsToUpdate.length} คำ สำเร็จอย่างรวดเร็วครับ!`);
+    alert(`⚡ ซ่อมแซมคำว่า Mexicoed, Hied เสร็จเรียบร้อยแล้วครับ R!`);
 }
 
 function deleteWord(index) {
