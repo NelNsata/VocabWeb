@@ -1,5 +1,5 @@
 // ==========================================
-// 🌟 1. ตั้งค่า SUPABASE
+// 🌟 1. ตั้งค่า SUPABASE (Production Keys)
 // ==========================================
 const SUPABASE_URL = 'https://oobldgtmzjdbiyqzcjyw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9vYmxkZ3RtempkYml5cXpjanl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2OTI2ODAsImV4cCI6MjA5MjI2ODY4MH0.D7k_8tLHXhUn1cJvb78IUwXIh4AtojHHgpfnQ1kjmjw';
@@ -11,8 +11,11 @@ let db = [];
 let stats = { forgotten: 0 };
 let commonWords = []; 
 let chartInstance = null;
+let isInitialLoadDone = false; // ป้องกันการโหลดเบิ้ลตอนเข้าเว็บ
 
-// --- 🔐 ระบบ Authentication (Discord) & Local Sync ---
+// ==========================================
+// 🔐 2. ระบบ Authentication & Session Manager
+// ==========================================
 supa.auth.onAuthStateChange(async (event, session) => {
     currentUser = session?.user || null;
     const loginBtn = document.getElementById('loginBtn');
@@ -20,23 +23,38 @@ supa.auth.onAuthStateChange(async (event, session) => {
     const cloudSyncIcon = document.getElementById('cloudSyncIcon');
 
     if (currentUser) {
-        loginBtn.classList.add('hidden');
-        userInfo.classList.remove('hidden');
-        userInfo.classList.add('flex');
-        cloudSyncIcon.classList.remove('hidden');
+        // UI: โหมดล็อกอิน
+        if(loginBtn) loginBtn.classList.add('hidden');
+        if(userInfo) {
+            userInfo.classList.remove('hidden');
+            userInfo.classList.add('flex');
+        }
+        if(cloudSyncIcon) cloudSyncIcon.classList.remove('hidden');
         
-        document.getElementById('userName').innerText = currentUser.user_metadata.full_name || currentUser.email;
-        document.getElementById('userAvatar').src = currentUser.user_metadata.avatar_url || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+        document.getElementById('userName').innerText = currentUser.user_metadata.full_name || currentUser.email.split('@')[0];
+        document.getElementById('userAvatar').src = currentUser.user_metadata.avatar_url || 'https://ui-avatars.com/api/?name=' + currentUser.email;
 
+        // โหลดข้อมูลเฉพาะเมื่อเข้าเว็บครั้งแรก หรือเพิ่งกดล็อกอินสำเร็จ
         if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-            await syncLocalToCloud();
-            await loadDataFromCloud();
+            if (!isInitialLoadDone) {
+                isInitialLoadDone = true;
+                await syncLocalToCloud();
+                await loadDataFromCloud();
+                
+                // ล้าง Token ออกจาก URL (ถ้ามี) เพื่อความสะอาด
+                if (window.location.hash.includes('access_token')) {
+                    history.replaceState(null, document.title, window.location.pathname);
+                }
+            }
         }
     } else {
-        loginBtn.classList.remove('hidden');
-        userInfo.classList.add('hidden');
-        userInfo.classList.remove('flex');
-        cloudSyncIcon.classList.add('hidden');
+        // UI: โหมดออฟไลน์
+        if(loginBtn) loginBtn.classList.remove('hidden');
+        if(userInfo) {
+            userInfo.classList.add('hidden');
+            userInfo.classList.remove('flex');
+        }
+        if(cloudSyncIcon) cloudSyncIcon.classList.add('hidden');
         
         if (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT') {
             loadDataFromLocal();
@@ -45,39 +63,42 @@ supa.auth.onAuthStateChange(async (event, session) => {
 });
 
 async function loginWithDiscord() {
-    const { error } = await supa.auth.signInWithOAuth({ 
-        provider: 'discord'
-    });
-    if (error) alert("เกิดข้อผิดพลาดในการล็อกอิน: " + error.message);
+    try {
+        const { error } = await supa.auth.signInWithOAuth({ provider: 'discord' });
+        if (error) throw error;
+    } catch (err) {
+        alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Discord: " + err.message);
+    }
 }
 
-// 🌟 แก้บัคล็อกเอาต์ไม่ได้: เตะกลับไปหน้าเว็บคลีนๆ ไร้ Token ห้อยท้าย!
 async function logout() {
     try {
-        console.log("กำลังออกจากระบบ...");
-        await supa.auth.signOut(); // สั่ง Supabase ให้ทำลาย Session
-        localStorage.clear(); // ล้างของเก่าในเครื่องทิ้งให้เกลี้ยง
+        document.getElementById('userName').innerText = "กำลังออก...";
+        await supa.auth.signOut();
+        localStorage.clear(); // ล้าง LocalStorage ทั้งหมดให้สะอาดเกลี้ยง
     } catch (err) {
         console.error("Logout Error:", err);
     } finally {
-        // บังคับเปลี่ยน URL กลับเป็นหน้าแรกล้วนๆ (ลบ #access_token ทิ้ง)
+        // บังคับรีเฟรชกลับหน้าแรกแบบไม่มี URL Parameters
         window.location.href = window.location.origin + window.location.pathname;
     }
 }
 
 // ==========================================
-// ☁️ 2. ระบบจัดการข้อมูล (Data Management)
+// ☁️ 3. ระบบ Data Sync & Cloud Management
 // ==========================================
-
 function loadDataFromLocal() {
-    db = JSON.parse(localStorage.getItem('vocab_db')) || [];
+    try {
+        db = JSON.parse(localStorage.getItem('vocab_db')) || [];
+    } catch (e) {
+        db = []; // ถ้าข้อมูลในเครื่องพัง ให้เริ่มใหม่
+    }
     updateUI(); 
     initChart();
 }
 
-async function loadDataFromCloud() {
+async function loadDataFromCloud(retryCount = 0) {
     try {
-        console.log("กำลังดึงข้อมูลจาก Cloud...");
         const { data, error } = await supa
             .from('vocab_entries')
             .select('*')
@@ -87,7 +108,6 @@ async function loadDataFromCloud() {
         if (error) throw error;
 
         if (data) {
-            console.log("ดึงข้อมูลสำเร็จ!", data.length, "คำ");
             db = data.map(item => ({
                 db_id: item.id,
                 word: item.word,
@@ -95,33 +115,36 @@ async function loadDataFromCloud() {
                 altTrans: item.alt_trans || '',
                 lang: item.lang || 'en',
                 pos: item.pos || 'General',
-                data1: item.data1 && item.data1 !== 'undefined' ? item.data1 : '-', // 🌟 แก้บัคคำว่า undefined
-                data2: item.data2 && item.data2 !== 'undefined' ? item.data2 : '-', // 🌟 แก้บัคคำว่า undefined
+                // 🛡️ ป้องกัน undefined หลงเข้ามาในระบบอย่างเด็ดขาด
+                data1: (item.data1 && item.data1 !== 'undefined' && item.data1 !== 'null') ? item.data1 : '-',
+                data2: (item.data2 && item.data2 !== 'undefined' && item.data2 !== 'null') ? item.data2 : '-',
                 forgotCount: item.forgot_count || 0
             }));
         }
     } catch (err) {
-        console.error("เกิดข้อผิดพลาดตอนดึงข้อมูล Cloud:", err.message);
+        console.error("ดึงข้อมูล Cloud พลาด:", err.message);
+        // ระบบ Auto-Retry ลองดึงใหม่ 1 ครั้งถ้าเน็ตมีปัญหา
+        if (retryCount < 1) {
+            console.log("กำลังลองเชื่อมต่อใหม่...");
+            setTimeout(() => loadDataFromCloud(1), 1500);
+            return;
+        }
     }
     
     updateUI();
     initChart();
     
     const modal = document.getElementById('vocabModal');
-    if (modal && !modal.classList.contains('hidden')) {
-        openVocabList();
-    }
+    if (modal && !modal.classList.contains('hidden')) openVocabList();
 }
 
 let isSyncing = false; 
-
 async function syncLocalToCloud() {
     if (isSyncing) return;
     const localDb = JSON.parse(localStorage.getItem('vocab_db')) || [];
-    if (localDb.length === 0) return; 
+    if (!Array.isArray(localDb) || localDb.length === 0) return; 
 
     isSyncing = true;
-
     try {
         const { data: cloudData, error: fetchError } = await supa
             .from('vocab_entries')
@@ -133,6 +156,8 @@ async function syncLocalToCloud() {
         const recordsToInsert = [];
 
         for (const localItem of localDb) {
+            if (!localItem || !localItem.word) continue; // ข้ามข้อมูลเสีย
+            
             const lowerLocalWord = localItem.word.toLowerCase();
             const existingCloudItem = cloudData.find(c => c.word.toLowerCase() === lowerLocalWord);
 
@@ -146,24 +171,23 @@ async function syncLocalToCloud() {
                 recordsToInsert.push({
                     user_id: currentUser.id,
                     word: localItem.word,
-                    translation: localItem.translation,
+                    translation: localItem.translation || '',
                     alt_trans: localItem.altTrans || '',
                     lang: localItem.lang || 'en',
                     pos: localItem.pos || 'General',
-                    data1: localItem.data1 && localItem.data1 !== 'undefined' ? localItem.data1 : '-',
-                    data2: localItem.data2 && localItem.data2 !== 'undefined' ? localItem.data2 : '-',
+                    data1: (localItem.data1 && localItem.data1 !== 'undefined') ? localItem.data1 : '-',
+                    data2: (localItem.data2 && localItem.data2 !== 'undefined') ? localItem.data2 : '-',
                     forgot_count: localItem.forgotCount || 0
                 });
             }
         }
 
         if (recordsToInsert.length > 0) {
-            const { error: insertErr } = await supa.from('vocab_entries').insert(recordsToInsert);
-            if (insertErr) throw insertErr;
+            await supa.from('vocab_entries').insert(recordsToInsert);
         }
 
         localStorage.removeItem('vocab_db'); 
-        console.log('☁️ ซิงค์และผสานคำศัพท์เข้ากับ Cloud สำเร็จแล้ว');
+        localStorage.removeItem('vocab_stats');
 
     } catch (err) {
         console.error("Sync Error:", err);
@@ -172,51 +196,67 @@ async function syncLocalToCloud() {
     }
 }
 
+let isSaving = false; // ป้องกันการกด Enter รัวๆ
 async function saveEntry(newEntry) {
-    if (currentUser) {
-        const record = {
-            user_id: currentUser.id,
-            word: newEntry.word,
-            translation: newEntry.translation,
-            alt_trans: newEntry.altTrans || '',
-            lang: newEntry.lang || 'en',
-            pos: newEntry.pos || 'General',
-            data1: newEntry.data1 || '',
-            data2: newEntry.data2 || '',
-            forgot_count: newEntry.forgotCount || 0
-        };
-        const { data, error } = await supa.from('vocab_entries').insert([record]).select();
-        if (!error && data) {
-            newEntry.db_id = data[0].id;
+    if (isSaving) return;
+    isSaving = true;
+
+    try {
+        if (currentUser) {
+            const record = {
+                user_id: currentUser.id,
+                word: newEntry.word,
+                translation: newEntry.translation,
+                alt_trans: newEntry.altTrans || '',
+                lang: newEntry.lang || 'en',
+                pos: newEntry.pos || 'General',
+                data1: newEntry.data1 || '-',
+                data2: newEntry.data2 || '-',
+                forgot_count: newEntry.forgotCount || 0
+            };
+            const { data, error } = await supa.from('vocab_entries').insert([record]).select();
+            if (!error && data) {
+                newEntry.db_id = data[0].id;
+                db.push(newEntry);
+            }
+        } else {
             db.push(newEntry);
         }
-    } else {
-        db.push(newEntry);
+        updateUI(); 
+    } finally {
+        isSaving = false;
     }
-    updateUI(); 
 }
 
 async function updateForgotCount(index) {
     db[index].forgotCount = (db[index].forgotCount || 0) + 1;
+    updateUI(); // วาด UI ทันทีไม่ต้องรอ Cloud
     
     if (currentUser && db[index].db_id) {
-        await supa.from('vocab_entries').update({ forgot_count: db[index].forgotCount }).eq('id', db[index].db_id);
+        // อัปเดตขึ้น Cloud แบบ Background
+        supa.from('vocab_entries')
+            .update({ forgot_count: db[index].forgotCount })
+            .eq('id', db[index].db_id)
+            .then(({error}) => { if(error) console.error("Update forgot count failed", error); });
     }
-    updateUI();
 }
 
 async function deleteWord(index) {
-    if (confirm(`ลบคำนี้ออกจากคลังความจำ?`)) {
-        if (currentUser && db[index].db_id) {
-            await supa.from('vocab_entries').delete().eq('id', db[index].db_id);
-        }
+    if (confirm(`ลบคำว่า "${db[index].word}" ออกจากคลังความจำ?`)) {
+        const deletedItem = db[index];
         db.splice(index, 1);
-        
-        updateUI();
+        updateUI(); // ลบออกจากหน้าจอทันที
         openVocabList(); 
+        
+        if (currentUser && deletedItem.db_id) {
+            await supa.from('vocab_entries').delete().eq('id', deletedItem.db_id);
+        }
     }
 }
 
+// ==========================================
+// 📊 4. ระบบ UI & Graph
+// ==========================================
 function updateUI() {
     stats.forgotten = db.reduce((sum, item) => sum + (item.forgotCount || 0), 0);
     document.getElementById('totalCount').innerText = db.length;
@@ -230,11 +270,10 @@ function updateUI() {
     updateChart();
 }
 
-// ==========================================
-// 📊 3. ระบบกราฟและ UI
-// ==========================================
 function initChart() {
-    const ctx = document.getElementById('statChart').getContext('2d');
+    const canvas = document.getElementById('statChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     if (chartInstance) chartInstance.destroy();
     
     chartInstance = new Chart(ctx, {
@@ -260,23 +299,25 @@ function updateChart() {
 }
 
 // ==========================================
-// 🧠 4. ระบบ Dictionary & AI Logic
+// 🧠 5. ระบบ Dictionary & Translation AI
 // ==========================================
 async function initDictionary() {
     try {
         const response = await fetch('https://raw.githubusercontent.com/first20hours/google-10000-english/master/google-10000-english-no-swears.txt');
+        if (!response.ok) throw new Error("Network response was not ok");
         const text = await response.text();
         commonWords = text.split('\n').map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
         document.getElementById('dictStatus').innerHTML = "✅ <span class='font-black'>PRO DICT READY</span>";
         document.getElementById('dictStatus').classList.replace('text-slate-400', 'text-green-500');
     } catch (e) {
-        document.getElementById('dictStatus').innerText = "⚠️ Offline Mode";
+        document.getElementById('dictStatus').innerHTML = "⚠️ <span class='font-black'>BASIC DICT</span>";
     }
 }
 
 function isChineseChar(text) { return /[\u4e00-\u9fa5]/.test(text); }
 
 function getLevenshteinDistance(s1, s2) {
+    if (!s1 || !s2) return 0;
     const track = Array(s2.length + 1).fill(null).map(() => Array(s1.length + 1).fill(null));
     for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
     for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
@@ -290,7 +331,7 @@ function getLevenshteinDistance(s1, s2) {
 }
 
 function getDidYouMean(wrongWord) {
-    if (wrongWord.length < 3 || commonWords.includes(wrongWord)) return null;
+    if (commonWords.length === 0 || wrongWord.length < 3 || commonWords.includes(wrongWord)) return null;
     let threshold = wrongWord.length >= 5 ? 2 : 1;
     let bestMatch = null;
     let minDistance = threshold + 1;
@@ -307,7 +348,7 @@ function getDidYouMean(wrongWord) {
     return bestMatch;
 }
 
-function autoFix(correctWord) {
+window.autoFix = function(correctWord) {
     document.getElementById('vocabInput').value = correctWord;
     document.getElementById('grammarAlert').classList.add('hidden');
     processVocab();
@@ -321,7 +362,7 @@ function validateInput(text) {
 
     const suggestion = getDidYouMean(word);
     if (suggestion) {
-        alertBox.innerHTML = `🤔 หมายถึงคำว่า <button onclick="autoFix('${suggestion}')" class="suggestion-btn">"${suggestion}"</button> ใช่ไหม?`;
+        alertBox.innerHTML = `🤔 หมายถึงคำว่า <button onclick="autoFix('${suggestion}')" class="text-blue-600 font-black underline hover:text-blue-800 transition">"${suggestion}"</button> ใช่ไหม?`;
         alertBox.classList.remove('hidden');
         return false;
     }
@@ -343,12 +384,16 @@ async function fetchPartOfSpeech(word, isChinese) {
         if (word.length >= 4) return "Phrase / Idiom (วลี/สำนวน)";
         return "Noun / Verb"; 
     }
+    
     const whWordsPOS = { 'who': 'Pronoun', 'what': 'Pronoun, Adverb', 'where': 'Adverb, Conjunction', 'when': 'Adverb, Conjunction', 'why': 'Adverb, Conjunction, Noun', 'how': 'Adverb, Conjunction', 'which': 'Pronoun, Determiner', 'whom': 'Pronoun', 'whose': 'Pronoun, Determiner' };
     if (whWordsPOS[lowerWord]) return whWordsPOS[lowerWord];
+    
     const greetingsEN = ['hello', 'hi', 'hey', 'goodbye', 'bye', 'welcome', 'thanks', 'sorry', 'good morning', 'good night'];
     if (greetingsEN.includes(lowerWord)) return "Interjection (คำทักทาย/อุทาน)";
-    const countriesEN = ['china', 'japan', 'korea', 'america', 'france', 'germany', 'italy', 'spain', 'thailand', 'london', 'england'];
-    if (countriesEN.includes(lowerWord) || lowerWord.endsWith('land') || lowerWord.endsWith('ia')) return "Proper Noun (ชื่อประเทศ/สถานที่)";
+    
+    const countriesEN = ['china', 'japan', 'korea', 'america', 'france', 'germany', 'italy', 'spain', 'thailand', 'london', 'england', 'mexico'];
+    if (countriesEN.includes(lowerWord) || lowerWord.endsWith('land') || lowerWord.endsWith('ia')) return "Proper Noun (ชื่อเฉพาะ/สถานที่)";
+    
     if (lowerWord.includes(' ')) return "Phrase (วลี/ประโยค)";
 
     try {
@@ -358,9 +403,8 @@ async function fetchPartOfSpeech(word, isChinese) {
             const posArray = dictData[0].meanings.map(m => m.partOfSpeech);
             const uniquePos = [...new Set(posArray)];
             return uniquePos.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
-        } else {
-            return "Unknown / Proper Noun";
         }
+        return "Unknown / Proper Noun";
     } catch (err) { return "Unknown"; }
 }
 
@@ -371,7 +415,7 @@ async function fetchTranslation(word, isChinese) {
         const gtRes = await fetch(gtUrl);
         const gtData = await gtRes.json();
         
-        let translatedText = gtData[0][0][0];
+        let translatedText = gtData[0][0][0] || "ไม่พบคำแปล";
         let pinyinText = "-";
         let altTranslations = []; 
 
@@ -387,7 +431,9 @@ async function fetchTranslation(word, isChinese) {
         }
         let altText = altTranslations.length > 0 ? altTranslations.join(', ') : "";
 
-        if (translatedText.toLowerCase() === word.toLowerCase() && word.length > 2 && !isChinese) return { error: true };
+        if (translatedText.toLowerCase() === word.toLowerCase() && word.length > 2 && !isChinese) {
+            return { error: true, msg: "แปลไม่ได้ อาจสะกดผิด" };
+        }
 
         let partOfSpeech = await fetchPartOfSpeech(word, isChinese);
         let past = "-"; let future = "-";
@@ -399,7 +445,9 @@ async function fetchTranslation(word, isChinese) {
             }
         }
         return { translation: translatedText, altTrans: altText, lang: isChinese ? 'zh' : 'en', pinyin: pinyinText, pos: partOfSpeech, past: past, future: future, error: false };
-    } catch (e) { return { error: true }; }
+    } catch (e) { 
+        return { error: true, msg: "การเชื่อมต่อ API แปลภาษาขัดข้อง" }; 
+    }
 }
 
 function generatePastTense(word) {
@@ -412,8 +460,8 @@ function generatePastTense(word) {
     return word + 'ed';
 }
 
-// --- 🚀 ประมวลผลหลัก ---
-async function processVocab() {
+// --- 🚀 กระบวนการหลัก (Core Process) ---
+window.processVocab = async function() {
     const input = document.getElementById('vocabInput');
     const word = input.value.trim();
     if (!word) return;
@@ -434,19 +482,20 @@ async function processVocab() {
     resultCard.classList.remove('hidden');
 
     if (existingIndex !== -1) {
-        displayWord.innerHTML = `<span class="forgotten-word">${word}</span>`;
+        displayWord.innerHTML = `<span class="forgotten-word text-red-500">${word}</span>`;
         await updateForgotCount(existingIndex);
         showData(db[existingIndex]);
+        input.value = '';
     } else {
         loadingOverlay?.classList.remove('hidden');
         displayWord.innerText = word;
-        displayTrans.innerText = "กำลังดึงข้อมูลระดับลึก...";
+        displayTrans.innerText = "กำลังวิเคราะห์รากศัพท์...";
         
         const apiResult = await fetchTranslation(word, isChinese);
         
         if (apiResult.error) {
             loadingOverlay?.classList.add('hidden');
-            document.getElementById('grammarAlert').innerHTML = `❌ ไม่พบคำแปลสำหรับ <b>"${word}"</b> โปรดเช็คตัวสะกด`;
+            document.getElementById('grammarAlert').innerHTML = `❌ <b>"${word}"</b>: ${apiResult.msg}`;
             document.getElementById('grammarAlert').classList.remove('hidden');
             return;
         }
@@ -465,8 +514,8 @@ async function processVocab() {
         await saveEntry(newEntry);
         showData(newEntry);
         loadingOverlay?.classList.add('hidden');
+        input.value = '';
     }
-    input.value = '';
 }
 
 function showData(data) {
@@ -491,25 +540,37 @@ function showData(data) {
     const label2 = document.getElementById('infoLabel2');
     const val2 = document.getElementById('infoValue2');
 
+    // 🛡️ ป้องกัน undefined แสดงผลหน้าจอ
+    const safeData1 = (data.data1 && data.data1 !== 'undefined' && data.data1 !== 'null') ? data.data1 : "-";
+    const safeData2 = (data.data2 && data.data2 !== 'undefined' && data.data2 !== 'null') ? data.data2 : "-";
+
     if (data.lang === 'zh') {
-        label1.innerText = "Pinyin (พินอิน)"; val1.innerText = data.data1 && data.data1 !== 'undefined' ? data.data1 : "-";
-        label2.innerText = "Type (ประเภท)"; val2.innerText = data.data2 && data.data2 !== 'undefined' ? data.data2 : "-";
+        label1.innerText = "Pinyin (พินอิน)"; val1.innerText = safeData1;
+        label2.innerText = "Type (ประเภท)"; val2.innerText = safeData2;
     } else {
-        label1.innerText = "Past Tense (อดีต)"; val1.innerText = data.data1 && data.data1 !== 'undefined' ? data.data1 : "-";
-        label2.innerText = "Future Tense (อนาคต)"; val2.innerText = data.data2 && data.data2 !== 'undefined' ? data.data2 : "-";
+        label1.innerText = "Past Tense (อดีต)"; val1.innerText = safeData1;
+        label2.innerText = "Future Tense (อนาคต)"; val2.innerText = safeData2;
     }
 }
 
-function openVocabList() {
+// --- 📋 ระบบคลังคำศัพท์ (Table Modal) ---
+window.openVocabList = function() {
     const tableBody = document.getElementById('vocabTableBody');
     tableBody.innerHTML = '';
-    db.forEach((item, index) => {
+    
+    // เรียงจากคำที่บันทึกล่าสุดขึ้นก่อน
+    const reversedDb = [...db].reverse();
+    
+    reversedDb.forEach((item) => {
+        // หา Index จริงๆ ของ db ต้นฉบับเพื่อเอาไปใช้ตอนลบ
+        const realIndex = db.findIndex(orig => orig.word === item.word);
+        
         const flag = item.lang === 'zh' ? '🇨🇳' : '🇬🇧';
-        const posHtml = (item.pos && item.pos !== "Unknown") ? `<br><span class="inline-block mt-2 text-[10px] md:text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-black uppercase tracking-wider">${item.pos}</span>` : '';
+        const posHtml = (item.pos && item.pos !== "Unknown" && item.pos !== "Unknown / Proper Noun") ? `<br><span class="inline-block mt-2 text-[10px] md:text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-black uppercase tracking-wider">${item.pos}</span>` : '';
         const altHtml = item.altTrans ? `<br><span class="text-xs md:text-sm text-slate-400 mt-1 inline-block">อื่นๆ: ${item.altTrans}</span>` : '';
         
-        // 🌟 แก้บัค undefined ในตาราง ให้แสดงขีด (-) แทนถ้าไม่มีข้อมูล
-        const infoData = (item.data1 && item.data1 !== 'undefined') ? item.data1 : '-';
+        // 🛡️ กรอง undefined แบบเด็ดขาด
+        const infoData = (item.data1 && item.data1 !== 'undefined' && item.data1 !== 'null') ? item.data1 : '-';
 
         const row = document.createElement('tr');
         row.className = "hover:bg-blue-50/30 transition duration-200 border-b border-slate-50";
@@ -525,36 +586,50 @@ function openVocabList() {
                 <span class="px-3 py-1 md:py-1.5 rounded-full text-xs md:text-sm font-black ${item.forgotCount > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-400'}">${item.forgotCount || 0}</span>
             </td>
             <td class="p-4 md:p-6 text-center align-middle">
-                <button onclick="deleteWord(${index})" class="text-slate-300 hover:text-red-500 text-xl md:text-2xl transition-all hover:scale-125">🗑️</button>
+                <button onclick="deleteWord(${realIndex})" class="text-slate-300 hover:text-red-500 text-xl md:text-2xl transition-all hover:scale-125" title="ลบคำนี้">🗑️</button>
             </td>`;
         tableBody.appendChild(row);
     });
     document.getElementById('vocabModal').classList.remove('hidden');
 }
 
-async function updateOldWords() {
+window.closeVocabList = function() { document.getElementById('vocabModal').classList.add('hidden'); }
+
+// 🌟 ฟังก์ชันทำความสะอาดคำเก่า (ล้าง undefined + อัปเดต POS)
+window.updateOldWords = async function() {
     const icon = document.getElementById('syncIcon');
     icon.classList.add('inline-block', 'spin-fast'); 
 
-    const wordsToUpdate = db.filter(item => item.lang !== 'zh' && (!item.pos || item.altTrans === undefined));
+    // ดึงคำที่ผิดปกติทั้งหมด (มี undefined, หรือยังไม่มี POS)
+    const wordsToUpdate = db.filter(item => 
+        item.lang !== 'zh' && 
+        (!item.pos || item.altTrans === undefined || item.data1 === 'undefined' || item.data2 === 'undefined' || item.data1 === null)
+    );
     
     if (wordsToUpdate.length === 0) {
         icon.classList.remove('spin-fast');
-        alert(`คำทั้งหมดอัปเดตสมบูรณ์แล้ว!`);
+        alert(`เยี่ยมมาก! คลังคำศัพท์ของคุณสมบูรณ์ 100% ไม่มีข้อมูลตกหล่นหรือขึ้น undefined แล้วครับ 🎉`);
         return;
     }
 
     const updatePromises = wordsToUpdate.map(async (item) => {
+        // อัปเดต POS
         const newPos = await fetchPartOfSpeech(item.word, false);
         item.pos = newPos;
 
+        // ล้าง Tense ทิ้งถ้าไม่ใช่ Verb 
         const posLower = newPos.toLowerCase();
         if (item.word.includes(' ') || !posLower.includes('verb')) {
             item.data1 = "-"; 
             item.data2 = "-"; 
+        } else {
+            // สร้างใหม่ถ้าพัง
+            if (item.data1 === 'undefined' || item.data1 === null) item.data1 = generatePastTense(item.word);
+            if (item.data2 === 'undefined' || item.data2 === null) item.data2 = "will " + item.word;
         }
 
-        if (item.altTrans === undefined) {
+        // ดึงความหมายเพิ่มเติม
+        if (!item.altTrans) {
             try {
                 const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&dt=bd&q=${encodeURIComponent(item.word)}`;
                 const gtRes = await fetch(gtUrl);
@@ -573,6 +648,7 @@ async function updateOldWords() {
             }
         }
         
+        // ซิงค์ขึ้น Cloud
         if (currentUser && item.db_id) {
             await supa.from('vocab_entries').update({
                 pos: item.pos,
@@ -591,10 +667,14 @@ async function updateOldWords() {
     if (!document.getElementById('vocabModal').classList.contains('hidden')) {
         openVocabList(); 
     }
-    alert(`⚡ อัปเดตความหมายเพิ่มเติม และซ่อมแซมคำเก่าเรียบร้อยครับ R!`);
+    alert(`⚡ กวาดล้างคำว่า undefined และอัปเดตความหมายเพิ่มเติมเรียบร้อยครับ R!`);
 }
 
-function closeVocabList() { document.getElementById('vocabModal').classList.add('hidden'); }
-document.getElementById('vocabInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') processVocab(); });
+// ==========================================
+// 🚀 6. Event Listeners & Initialize
+// ==========================================
+document.getElementById('vocabInput').addEventListener('keypress', (e) => { 
+    if (e.key === 'Enter') processVocab(); 
+});
 
 initDictionary();
