@@ -103,19 +103,27 @@
 
     <div id="vocabModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col border border-white/20">
-            <div class="p-6 md:p-8 border-b flex justify-between items-center bg-slate-50/50">
-                <h2 class="text-2xl md:text-3xl font-black text-slate-800 italic tracking-tighter uppercase">Vocabulary Vault</h2>
-                <div class="flex items-center gap-4">
-                    <button onclick="updateOldWords()" class="text-sm md:text-base bg-purple-100 text-purple-700 border border-purple-200 font-bold px-4 md:px-6 py-2 md:py-3 rounded-xl hover:bg-purple-200 transition shadow-sm flex items-center gap-2">
-                        <span id="syncIcon">🔄</span> ดึงข้อมูลเก่า (POS)
-                    </button>
+            <div class="p-6 md:p-8 border-b bg-slate-50/50">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl md:text-3xl font-black text-slate-800 italic tracking-tighter uppercase">Vocabulary Vault</h2>
                     <button onclick="closeVocabList()" class="text-slate-300 hover:text-slate-900 text-4xl md:text-5xl font-light transition">&times;</button>
                 </div>
+                
+                <div class="flex flex-col md:flex-row gap-3">
+                    <div class="relative flex-1">
+                        <input type="text" id="vocabSearch" oninput="filterVocab()" placeholder="🔍 ค้นหาคำศัพท์ หรือ คำแปลไทย..." 
+                            class="w-full p-3 pl-10 rounded-xl border border-slate-200 focus:border-blue-500 outline-none text-sm md:text-base transition shadow-sm">
+                    </div>
+                    <button onclick="updateOldWords()" class="text-sm md:text-base bg-purple-100 text-purple-700 border border-purple-200 font-bold px-4 md:px-6 py-2 rounded-xl hover:bg-purple-200 transition shadow-sm flex items-center justify-center gap-2">
+                        <span id="syncIcon">🔄</span> อัปเดตคำเก่า
+                    </button>
+                </div>
             </div>
+            
             <div class="p-0 overflow-y-auto flex-1">
                 <table class="w-full text-left border-collapse">
                     <thead class="sticky top-0 bg-white/95 backdrop-blur shadow-sm z-10">
-                        <tr class="text-slate-400 text-xs md:text-sm uppercase font-black tracking-widest">
+                        <tr class="text-slate-400 text-[10px] md:text-xs uppercase font-black tracking-widest">
                             <th class="p-4 md:p-6">Word Info</th>
                             <th class="p-4 md:p-6">Translation</th>
                             <th class="p-4 md:p-6 text-center">Repeat</th>
