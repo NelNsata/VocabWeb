@@ -14,15 +14,12 @@ let chartInstance = null;
 
 // --- 🔐 ระบบ Authentication (Discord) & Local Sync ---
 supa.auth.onAuthStateChange(async (event, session) => {
-    // console.log("สถานะ Auth เปลี่ยนแปลง:", event); // ปิด Debug ไว้
-
     currentUser = session?.user || null;
     const loginBtn = document.getElementById('loginBtn');
     const userInfo = document.getElementById('userInfo');
     const cloudSyncIcon = document.getElementById('cloudSyncIcon');
 
     if (currentUser) {
-        // ล็อกอินแล้ว
         loginBtn.classList.add('hidden');
         userInfo.classList.remove('hidden');
         userInfo.classList.add('flex');
@@ -31,13 +28,11 @@ supa.auth.onAuthStateChange(async (event, session) => {
         document.getElementById('userName').innerText = currentUser.user_metadata.full_name || currentUser.email;
         document.getElementById('userAvatar').src = currentUser.user_metadata.avatar_url || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
-        // 🌟 แก้บัคดึงข้อมูลเบิ้ล: สั่งให้ทำงานเฉพาะตอนโหลดเว็บครั้งแรก หรือ เพิ่งล็อกอินสำเร็จหมาดๆ เท่านั้น
         if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
             await syncLocalToCloud();
             await loadDataFromCloud();
         }
     } else {
-        // ยังไม่ล็อกอิน
         loginBtn.classList.remove('hidden');
         userInfo.classList.add('hidden');
         userInfo.classList.remove('flex');
@@ -56,21 +51,17 @@ async function loginWithDiscord() {
     if (error) alert("เกิดข้อผิดพลาดในการล็อกอิน: " + error.message);
 }
 
-// 🌟 แก้บัคล็อกเอาต์ไม่ได้ (บังคับเคลียร์แคช ถอนรากถอนโคน)
+// 🌟 แก้บัคล็อกเอาต์ไม่ได้: เตะกลับไปหน้าเว็บคลีนๆ ไร้ Token ห้อยท้าย!
 async function logout() {
     try {
         console.log("กำลังออกจากระบบ...");
-        await supa.auth.signOut();
+        await supa.auth.signOut(); // สั่ง Supabase ให้ทำลาย Session
+        localStorage.clear(); // ล้างของเก่าในเครื่องทิ้งให้เกลี้ยง
     } catch (err) {
         console.error("Logout Error:", err);
     } finally {
-        // ล้างข้อมูลเซสชันในเครื่องทิ้งทั้งหมด เพื่อไม่ให้เบราว์เซอร์จำค่าเก่า
-        for (let key in localStorage) {
-            if (key.startsWith('sb-')) {
-                localStorage.removeItem(key);
-            }
-        }
-        window.location.reload();
+        // บังคับเปลี่ยน URL กลับเป็นหน้าแรกล้วนๆ (ลบ #access_token ทิ้ง)
+        window.location.href = window.location.origin + window.location.pathname;
     }
 }
 
@@ -104,8 +95,8 @@ async function loadDataFromCloud() {
                 altTrans: item.alt_trans || '',
                 lang: item.lang || 'en',
                 pos: item.pos || 'General',
-                data1: item.data1 || '-',
-                data2: item.data2 || '-',
+                data1: item.data1 && item.data1 !== 'undefined' ? item.data1 : '-', // 🌟 แก้บัคคำว่า undefined
+                data2: item.data2 && item.data2 !== 'undefined' ? item.data2 : '-', // 🌟 แก้บัคคำว่า undefined
                 forgotCount: item.forgot_count || 0
             }));
         }
@@ -122,7 +113,6 @@ async function loadDataFromCloud() {
     }
 }
 
-// 🌟 ระบบดูด Local ขึ้น Cloud (กันคำซ้ำ)
 let isSyncing = false; 
 
 async function syncLocalToCloud() {
@@ -160,8 +150,8 @@ async function syncLocalToCloud() {
                     alt_trans: localItem.altTrans || '',
                     lang: localItem.lang || 'en',
                     pos: localItem.pos || 'General',
-                    data1: localItem.data1 || '',
-                    data2: localItem.data2 || '',
+                    data1: localItem.data1 && localItem.data1 !== 'undefined' ? localItem.data1 : '-',
+                    data2: localItem.data2 && localItem.data2 !== 'undefined' ? localItem.data2 : '-',
                     forgot_count: localItem.forgotCount || 0
                 });
             }
@@ -502,11 +492,11 @@ function showData(data) {
     const val2 = document.getElementById('infoValue2');
 
     if (data.lang === 'zh') {
-        label1.innerText = "Pinyin (พินอิน)"; val1.innerText = data.data1 || "-";
-        label2.innerText = "Type (ประเภท)"; val2.innerText = data.data2 || "-";
+        label1.innerText = "Pinyin (พินอิน)"; val1.innerText = data.data1 && data.data1 !== 'undefined' ? data.data1 : "-";
+        label2.innerText = "Type (ประเภท)"; val2.innerText = data.data2 && data.data2 !== 'undefined' ? data.data2 : "-";
     } else {
-        label1.innerText = "Past Tense (อดีต)"; val1.innerText = data.data1 || "-";
-        label2.innerText = "Future Tense (อนาคต)"; val2.innerText = data.data2 || "-";
+        label1.innerText = "Past Tense (อดีต)"; val1.innerText = data.data1 && data.data1 !== 'undefined' ? data.data1 : "-";
+        label2.innerText = "Future Tense (อนาคต)"; val2.innerText = data.data2 && data.data2 !== 'undefined' ? data.data2 : "-";
     }
 }
 
@@ -517,7 +507,9 @@ function openVocabList() {
         const flag = item.lang === 'zh' ? '🇨🇳' : '🇬🇧';
         const posHtml = (item.pos && item.pos !== "Unknown") ? `<br><span class="inline-block mt-2 text-[10px] md:text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-black uppercase tracking-wider">${item.pos}</span>` : '';
         const altHtml = item.altTrans ? `<br><span class="text-xs md:text-sm text-slate-400 mt-1 inline-block">อื่นๆ: ${item.altTrans}</span>` : '';
-        const infoData = item.data1 !== undefined ? item.data1 : '-';
+        
+        // 🌟 แก้บัค undefined ในตาราง ให้แสดงขีด (-) แทนถ้าไม่มีข้อมูล
+        const infoData = (item.data1 && item.data1 !== 'undefined') ? item.data1 : '-';
 
         const row = document.createElement('tr');
         row.className = "hover:bg-blue-50/30 transition duration-200 border-b border-slate-50";
