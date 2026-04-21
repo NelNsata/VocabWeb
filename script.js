@@ -28,7 +28,7 @@ supa.auth.onAuthStateChange(async (event, session) => {
         document.getElementById('userName').innerText = currentUser.user_metadata.full_name || currentUser.email;
         document.getElementById('userAvatar').src = currentUser.user_metadata.avatar_url || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
-        // 🌟 ซิงค์ข้อมูลเข้า Cloud
+        // 🌟 ดึงข้อมูลจาก Cloud และซิงค์
         await syncLocalToCloud();
         await loadDataFromCloud();
     } else {
@@ -45,10 +45,7 @@ async function loginWithDiscord() {
     const { error } = await supa.auth.signInWithOAuth({ 
         provider: 'discord'
     });
-    
-    if (error) {
-        alert("เกิดข้อผิดพลาดในการล็อกอิน: " + error.message);
-    }
+    if (error) alert("เกิดข้อผิดพลาดในการล็อกอิน: " + error.message);
 }
 
 async function logout() {
@@ -62,35 +59,53 @@ async function logout() {
 
 function loadDataFromLocal() {
     db = JSON.parse(localStorage.getItem('vocab_db')) || [];
-    recalculateStats();
+    updateUI(); // บังคับวาด UI
     initChart();
 }
 
+// 🌟 แก้บัคข้อมูลหาย: บังคับดึงข้อมูลให้ทะลุ + รีเฟรชหน้าจอทันที!
 async function loadDataFromCloud() {
-    const { data, error } = await supa
-        .from('vocab_entries')
-        .select('*')
-        .order('id', { ascending: true });
-        
-    if (!error) {
-        db = data.map(item => ({
-            db_id: item.id,
-            word: item.word,
-            translation: item.translation,
-            altTrans: item.alt_trans,
-            lang: item.lang,
-            pos: item.pos,
-            data1: item.data1,
-            data2: item.data2,
-            forgotCount: item.forgot_count
-        }));
+    try {
+        console.log("กำลังดึงข้อมูลจาก Cloud...");
+        const { data, error } = await supa
+            .from('vocab_entries')
+            .select('*')
+            .eq('user_id', currentUser.id) // บังคับขอดึงเฉพาะของยูสเซอร์นี้
+            .order('id', { ascending: true });
+            
+        if (error) throw error;
+
+        if (data) {
+            console.log("ดึงข้อมูลสำเร็จ!", data.length, "คำ");
+            db = data.map(item => ({
+                db_id: item.id,
+                word: item.word,
+                translation: item.translation,
+                altTrans: item.alt_trans || '',
+                lang: item.lang || 'en',
+                pos: item.pos || 'General',
+                data1: item.data1 || '-',
+                data2: item.data2 || '-',
+                forgotCount: item.forgot_count || 0
+            }));
+        }
+    } catch (err) {
+        console.error("เกิดข้อผิดพลาดตอนดึงข้อมูล Cloud:", err.message);
     }
-    recalculateStats();
+    
+    // 🌟 ไม่ว่าจะโหลดสำเร็จหรือพัง ต้องบังคับรีเฟรช UI เสมอ!
+    updateUI();
     initChart();
+    
+    // ถ้ารายการคำศัพท์เปิดค้างอยู่ ให้บังคับวาดตารางใหม่ด้วย
+    const modal = document.getElementById('vocabModal');
+    if (modal && !modal.classList.contains('hidden')) {
+        openVocabList();
+    }
 }
 
 // 🌟 ระบบดูด Local ขึ้น Cloud (แก้บัคคำซ้ำแล้ว!)
-let isSyncing = false; // ป้องกันบัคเบิ้ลจากการรันซ้ำซ้อน
+let isSyncing = false; 
 
 async function syncLocalToCloud() {
     if (isSyncing) return;
@@ -100,7 +115,6 @@ async function syncLocalToCloud() {
     isSyncing = true;
 
     try {
-        // 1. โหลดข้อมูลเดิมบน Cloud มาเช็คก่อน
         const { data: cloudData, error: fetchError } = await supa
             .from('vocab_entries')
             .select('id, word, forgot_count')
@@ -110,20 +124,17 @@ async function syncLocalToCloud() {
 
         const recordsToInsert = [];
 
-        // 2. เช็คคำศัพท์จาก Local ทีละคำ
         for (const localItem of localDb) {
             const lowerLocalWord = localItem.word.toLowerCase();
             const existingCloudItem = cloudData.find(c => c.word.toLowerCase() === lowerLocalWord);
 
             if (existingCloudItem) {
-                // ถ้ามีคำนี้บน Cloud แล้ว -> เอาสถิติการลืมไปบวกเพิ่มอย่างเดียว (ไม่สร้างคำใหม่)
                 if (localItem.forgotCount > 0) {
                     await supa.from('vocab_entries')
                         .update({ forgot_count: existingCloudItem.forgot_count + localItem.forgotCount })
                         .eq('id', existingCloudItem.id);
                 }
             } else {
-                // ถ้าเป็นคำใหม่จริงๆ -> เตรียมดันขึ้น Cloud
                 recordsToInsert.push({
                     user_id: currentUser.id,
                     word: localItem.word,
@@ -138,14 +149,13 @@ async function syncLocalToCloud() {
             }
         }
 
-        // 3. ส่งคำศัพท์ใหม่ (ที่ไม่ซ้ำ) ขึ้น Cloud
         if (recordsToInsert.length > 0) {
-            await supa.from('vocab_entries').insert(recordsToInsert);
+            const { error: insertErr } = await supa.from('vocab_entries').insert(recordsToInsert);
+            if (insertErr) throw insertErr;
         }
 
-        // ล้าง Local ทิ้ง
         localStorage.removeItem('vocab_db'); 
-        alert('☁️ ซิงค์และผสานคำศัพท์เข้ากับ Cloud สำเร็จแล้ว (ไม่มีคำซ้ำ)!');
+        console.log('☁️ ซิงค์และผสานคำศัพท์เข้ากับ Cloud สำเร็จแล้ว');
 
     } catch (err) {
         console.error("Sync Error:", err);
@@ -174,10 +184,8 @@ async function saveEntry(newEntry) {
         }
     } else {
         db.push(newEntry);
-        localStorage.setItem('vocab_db', JSON.stringify(db));
     }
-    recalculateStats();
-    updateChart();
+    updateUI(); // ใช้ updateUI เพื่ออัปเดตทุกอย่าง
 }
 
 async function updateForgotCount(index) {
@@ -185,11 +193,8 @@ async function updateForgotCount(index) {
     
     if (currentUser && db[index].db_id) {
         await supa.from('vocab_entries').update({ forgot_count: db[index].forgotCount }).eq('id', db[index].db_id);
-    } else {
-        localStorage.setItem('vocab_db', JSON.stringify(db));
     }
-    recalculateStats();
-    updateChart();
+    updateUI();
 }
 
 async function deleteWord(index) {
@@ -198,18 +203,25 @@ async function deleteWord(index) {
             await supa.from('vocab_entries').delete().eq('id', db[index].db_id);
         }
         db.splice(index, 1);
-        if (!currentUser) localStorage.setItem('vocab_db', JSON.stringify(db));
         
-        recalculateStats();
-        updateChart();
-        openVocabList();
+        updateUI();
+        openVocabList(); // รีเฟรชตารางหลังลบ
     }
 }
 
-function recalculateStats() {
+// 🌟 ยุบรวมการคำนวณสถิติและอัปเดตหน้าจอเข้าด้วยกัน เพื่อกันบัค UI ไม่รีเฟรช
+function updateUI() {
     stats.forgotten = db.reduce((sum, item) => sum + (item.forgotCount || 0), 0);
     document.getElementById('totalCount').innerText = db.length;
     document.getElementById('forgetCount').innerText = stats.forgotten;
+    
+    // ถ้าไม่ได้ล็อกอิน ให้เก็บลง LocalStorage ด้วย
+    if (!currentUser) {
+        localStorage.setItem('vocab_db', JSON.stringify(db));
+        localStorage.setItem('vocab_stats', JSON.stringify(stats));
+    }
+    
+    updateChart();
 }
 
 // ==========================================
@@ -566,7 +578,7 @@ async function updateOldWords() {
     await Promise.all(updatePromises);
 
     icon.classList.remove('spin-fast'); 
-    updateUI();
+    updateUI(); // บังคับรีเฟรช UI หลังซ่อมเสร็จ
     
     if (!document.getElementById('vocabModal').classList.contains('hidden')) {
         openVocabList(); 
