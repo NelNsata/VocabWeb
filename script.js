@@ -14,12 +14,15 @@ let chartInstance = null;
 
 // --- 🔐 ระบบ Authentication (Discord) & Local Sync ---
 supa.auth.onAuthStateChange(async (event, session) => {
+    // console.log("สถานะ Auth เปลี่ยนแปลง:", event); // ปิด Debug ไว้
+
     currentUser = session?.user || null;
     const loginBtn = document.getElementById('loginBtn');
     const userInfo = document.getElementById('userInfo');
     const cloudSyncIcon = document.getElementById('cloudSyncIcon');
 
     if (currentUser) {
+        // ล็อกอินแล้ว
         loginBtn.classList.add('hidden');
         userInfo.classList.remove('hidden');
         userInfo.classList.add('flex');
@@ -28,16 +31,21 @@ supa.auth.onAuthStateChange(async (event, session) => {
         document.getElementById('userName').innerText = currentUser.user_metadata.full_name || currentUser.email;
         document.getElementById('userAvatar').src = currentUser.user_metadata.avatar_url || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
-        // 🌟 ดึงข้อมูลจาก Cloud และซิงค์
-        await syncLocalToCloud();
-        await loadDataFromCloud();
+        // 🌟 แก้บัคดึงข้อมูลเบิ้ล: สั่งให้ทำงานเฉพาะตอนโหลดเว็บครั้งแรก หรือ เพิ่งล็อกอินสำเร็จหมาดๆ เท่านั้น
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+            await syncLocalToCloud();
+            await loadDataFromCloud();
+        }
     } else {
+        // ยังไม่ล็อกอิน
         loginBtn.classList.remove('hidden');
         userInfo.classList.add('hidden');
         userInfo.classList.remove('flex');
         cloudSyncIcon.classList.add('hidden');
         
-        loadDataFromLocal();
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_OUT') {
+            loadDataFromLocal();
+        }
     }
 });
 
@@ -48,9 +56,22 @@ async function loginWithDiscord() {
     if (error) alert("เกิดข้อผิดพลาดในการล็อกอิน: " + error.message);
 }
 
+// 🌟 แก้บัคล็อกเอาต์ไม่ได้ (บังคับเคลียร์แคช ถอนรากถอนโคน)
 async function logout() {
-    await supa.auth.signOut();
-    window.location.reload();
+    try {
+        console.log("กำลังออกจากระบบ...");
+        await supa.auth.signOut();
+    } catch (err) {
+        console.error("Logout Error:", err);
+    } finally {
+        // ล้างข้อมูลเซสชันในเครื่องทิ้งทั้งหมด เพื่อไม่ให้เบราว์เซอร์จำค่าเก่า
+        for (let key in localStorage) {
+            if (key.startsWith('sb-')) {
+                localStorage.removeItem(key);
+            }
+        }
+        window.location.reload();
+    }
 }
 
 // ==========================================
@@ -59,18 +80,17 @@ async function logout() {
 
 function loadDataFromLocal() {
     db = JSON.parse(localStorage.getItem('vocab_db')) || [];
-    updateUI(); // บังคับวาด UI
+    updateUI(); 
     initChart();
 }
 
-// 🌟 แก้บัคข้อมูลหาย: บังคับดึงข้อมูลให้ทะลุ + รีเฟรชหน้าจอทันที!
 async function loadDataFromCloud() {
     try {
         console.log("กำลังดึงข้อมูลจาก Cloud...");
         const { data, error } = await supa
             .from('vocab_entries')
             .select('*')
-            .eq('user_id', currentUser.id) // บังคับขอดึงเฉพาะของยูสเซอร์นี้
+            .eq('user_id', currentUser.id) 
             .order('id', { ascending: true });
             
         if (error) throw error;
@@ -93,18 +113,16 @@ async function loadDataFromCloud() {
         console.error("เกิดข้อผิดพลาดตอนดึงข้อมูล Cloud:", err.message);
     }
     
-    // 🌟 ไม่ว่าจะโหลดสำเร็จหรือพัง ต้องบังคับรีเฟรช UI เสมอ!
     updateUI();
     initChart();
     
-    // ถ้ารายการคำศัพท์เปิดค้างอยู่ ให้บังคับวาดตารางใหม่ด้วย
     const modal = document.getElementById('vocabModal');
     if (modal && !modal.classList.contains('hidden')) {
         openVocabList();
     }
 }
 
-// 🌟 ระบบดูด Local ขึ้น Cloud (แก้บัคคำซ้ำแล้ว!)
+// 🌟 ระบบดูด Local ขึ้น Cloud (กันคำซ้ำ)
 let isSyncing = false; 
 
 async function syncLocalToCloud() {
@@ -185,7 +203,7 @@ async function saveEntry(newEntry) {
     } else {
         db.push(newEntry);
     }
-    updateUI(); // ใช้ updateUI เพื่ออัปเดตทุกอย่าง
+    updateUI(); 
 }
 
 async function updateForgotCount(index) {
@@ -205,17 +223,15 @@ async function deleteWord(index) {
         db.splice(index, 1);
         
         updateUI();
-        openVocabList(); // รีเฟรชตารางหลังลบ
+        openVocabList(); 
     }
 }
 
-// 🌟 ยุบรวมการคำนวณสถิติและอัปเดตหน้าจอเข้าด้วยกัน เพื่อกันบัค UI ไม่รีเฟรช
 function updateUI() {
     stats.forgotten = db.reduce((sum, item) => sum + (item.forgotCount || 0), 0);
     document.getElementById('totalCount').innerText = db.length;
     document.getElementById('forgetCount').innerText = stats.forgotten;
     
-    // ถ้าไม่ได้ล็อกอิน ให้เก็บลง LocalStorage ด้วย
     if (!currentUser) {
         localStorage.setItem('vocab_db', JSON.stringify(db));
         localStorage.setItem('vocab_stats', JSON.stringify(stats));
@@ -578,7 +594,7 @@ async function updateOldWords() {
     await Promise.all(updatePromises);
 
     icon.classList.remove('spin-fast'); 
-    updateUI(); // บังคับรีเฟรช UI หลังซ่อมเสร็จ
+    updateUI(); 
     
     if (!document.getElementById('vocabModal').classList.contains('hidden')) {
         openVocabList(); 
