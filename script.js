@@ -42,10 +42,13 @@ supa.auth.onAuthStateChange(async (event, session) => {
 });
 
 async function loginWithDiscord() {
-    const { data, error } = await supa.auth.signInWithOAuth({ 
+    const { error } = await supa.auth.signInWithOAuth({ 
         provider: 'discord'
     });
-    if (error) alert("เกิดข้อผิดพลาดในการล็อกอิน: " + error.message);
+    
+    if (error) {
+        alert("เกิดข้อผิดพลาดในการล็อกอิน: " + error.message);
+    }
 }
 
 async function logout() {
